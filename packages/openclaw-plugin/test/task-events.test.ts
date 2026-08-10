@@ -1,0 +1,38 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { StringCodec } from "nats";
+import { NatsTaskEvents } from "../src/task-events.js";
+
+test("NatsTaskEvents publishes frozen v1.0 event envelopes to the compatible subject", async () => {
+  const published: Array<{ subject: string; data: Uint8Array }> = [];
+  let flushes = 0;
+  const connection = {
+    publish: (subject: string, data: Uint8Array) => published.push({ subject, data }),
+    flush: async () => { flushes += 1; },
+  };
+  const transport = new NatsTaskEvents(
+    { servers: "nats://nats.example", subjectPrefix: "fleetmind" },
+    async () => connection as never,
+  );
+  await transport.publish({
+    v: "1.0", event: "ship", task_id: "deadbeef", worker: "forge", at: "2026-08-10T20:00:00Z",
+  });
+  assert.equal(published[0]?.subject, "fleetmind.task.deadbeef.ship");
+  assert.deepEqual(JSON.parse(StringCodec().decode(published[0]!.data)), {
+    v: "1.0", event: "ship", task_id: "deadbeef", worker: "forge", at: "2026-08-10T20:00:00Z",
+  });
+  assert.equal(flushes, 1);
+});
+
+test("NatsTaskEvents routes delegation events to the worker subject", async () => {
+  let subject = "";
+  const connection = { publish: (value: string) => { subject = value; }, flush: async () => {} };
+  const transport = new NatsTaskEvents(
+    { servers: "nats://nats.example", subjectPrefix: "fleetmind" },
+    async () => connection as never,
+  );
+  await transport.publish({
+    v: "1.0", event: "delegation", task_id: "deadbeef", worker: "forge", at: "2026-08-10T20:00:00Z",
+  });
+  assert.equal(subject, "fleetmind.delegation.forge");
+});
