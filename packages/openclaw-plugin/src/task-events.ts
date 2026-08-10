@@ -22,6 +22,7 @@ type Connect = (options: ConnectionOptions) => Promise<NatsConnection>;
 export class NatsTaskEvents {
   private readonly codec = StringCodec();
   private connection?: NatsConnection;
+  private connectionPromise?: Promise<NatsConnection>;
   private activeSubscriptions = 0;
 
   constructor(
@@ -44,14 +45,25 @@ export class NatsTaskEvents {
   }
 
   async close(): Promise<void> {
-    if (this.connection) await this.connection.drain();
+    const connection = this.connection ?? await this.connectionPromise;
     this.connection = undefined;
+    this.connectionPromise = undefined;
     this.activeSubscriptions = 0;
+    if (connection) await connection.drain();
   }
 
   private async getConnection(): Promise<NatsConnection> {
-    this.connection ??= await this.connectFn(this.config);
-    return this.connection;
+    if (this.connection) return this.connection;
+    this.connectionPromise ??= this.connectFn(this.config)
+      .then((connection) => {
+        this.connection = connection;
+        return connection;
+      })
+      .catch((error: unknown) => {
+        this.connectionPromise = undefined;
+        throw error;
+      });
+    return this.connectionPromise;
   }
 
   private subjectFor(event: TaskEvent): string {
@@ -80,7 +92,7 @@ export class NatsTaskEvents {
       if (closed) return;
       closed = true;
       subscription.unsubscribe();
-      this.activeSubscriptions -= 1;
+      this.activeSubscriptions = Math.max(0, this.activeSubscriptions - 1);
       if (this.activeSubscriptions === 0) await this.close();
     };
   }

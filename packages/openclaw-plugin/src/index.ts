@@ -37,7 +37,12 @@ export async function listActiveTasks(
   // the global newest N tasks after merging, without starving a status bucket.
   const limit = options.limit ?? 20;
   const results = await Promise.all(
-    ACTIVE_TASK_STATUSES.map((status) => reader.listByStatus({ ...options, limit, status })),
+    ACTIVE_TASK_STATUSES.map((status) => reader.listByStatus({
+      ...options,
+      status,
+      limit,
+      ascending: false,
+    })),
   );
   return results
     .flat()

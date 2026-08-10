@@ -55,3 +55,21 @@ test("one subscription cleanup does not drain a shared transport with another su
   await stopWorker();
   assert.equal(drains, 1);
 });
+
+test("concurrent first use shares one in-flight NATS connection", async () => {
+  let connects = 0;
+  const connection = { publish: () => {}, flush: async () => {} };
+  const transport = new NatsTaskEvents(
+    { servers: "nats://nats.example", subjectPrefix: "fleetmind" },
+    async () => {
+      connects += 1;
+      await Promise.resolve();
+      return connection as never;
+    },
+  );
+  await Promise.all([
+    transport.publish({ v: "1.0", event: "ack", task_id: "deadbeef", worker: "forge", at: "2026-08-10T20:00:00Z" }),
+    transport.publish({ v: "1.0", event: "ship", task_id: "deadbeef", worker: "forge", at: "2026-08-10T20:00:00Z" }),
+  ]);
+  assert.equal(connects, 1);
+});

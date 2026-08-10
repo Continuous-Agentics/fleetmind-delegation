@@ -26,6 +26,7 @@ test("DynamoDbTaskReader selects the stable index for project and global queries
   await reader.listByStatus({ status: "accepted", project: "fleetmind", limit: 3 });
   await reader.listByStatus({ status: "accepted" });
   assert.equal(requests[0]?.IndexName, "ProjectStatusIndex");
+  assert.equal(requests[0]?.ScanIndexForward, true);
   assert.deepEqual(requests[0]?.ExpressionAttributeValues, { ":pk": "PROJECT#fleetmind#STATUS#accepted" });
   assert.equal(requests[1]?.IndexName, "StatusIndex");
   assert.deepEqual(requests[1]?.ExpressionAttributeValues, { ":pk": "STATUS#accepted" });
@@ -50,4 +51,18 @@ test("listActiveTasks queries every non-terminal task status and orders newest f
   assert.deepEqual(seen.sort(), [...ACTIVE_TASK_STATUSES].sort());
   assert.equal(tasks.length, 2);
   assert.ok(tasks.every((task) => task.status !== "delegated"));
+});
+
+test("listActiveTasks requests the newest candidates from every status before merging", async () => {
+  const requests: Array<{ status: string; limit?: number; ascending?: boolean }> = [];
+  const reader = {
+    get: async () => undefined,
+    listByStatus: async (request: { status: string; limit?: number; ascending?: boolean }) => {
+      requests.push(request);
+      return [];
+    },
+  } as never;
+  await listActiveTasks(reader, { limit: 2 });
+  assert.equal(requests.length, ACTIVE_TASK_STATUSES.length);
+  assert.ok(requests.every((request) => request.limit === 2 && request.ascending === false));
 });
