@@ -1,0 +1,24 @@
+{
+  "name": "@continuous-agentics/openclaw-delegation-plugin",
+  "version": "0.1.0",
+  "description": "OpenClaw plugin boundary for FleetMind delegation.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --test 'dist/test/**/*.test.js'"
+  },
+  "dependencies": {
+    "@continuous-agentics/delegation-core": "0.1.0"
+  }
+}
