@@ -10,7 +10,7 @@ import {
   taskSubject,
   TaskEventSchema,
   TaskRecordSchema,
-} from "../index.js";
+} from "../src/index.js";
 
 describe("FleetMind compatibility contracts", () => {
   test("preserves task keys and status indexes", () => {
