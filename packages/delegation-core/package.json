@@ -1,0 +1,33 @@
+{
+  "name": "@continuous-agentics/delegation-core",
+  "version": "0.1.0",
+  "description": "Versioned delegation contracts shared by FleetMind and OpenClaw.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
+    "test": "tsc -p tsconfig.test.json && node --test 'test-dist/test/**/*.test.js'"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  }
+}

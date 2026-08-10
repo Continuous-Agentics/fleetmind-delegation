@@ -1,0 +1,25 @@
+{
+  "name": "@continuous-agentics/fleetmind-delegation",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Channel-neutral delegation runtime packages for FleetMind and OpenClaw.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Continuous-Agentics/fleetmind-delegation.git"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.0"
+  }
+}
