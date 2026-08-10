@@ -77,7 +77,7 @@ export class DynamoDbTaskReader implements TaskReader {
         Limit: options.limit,
       } satisfies QueryCommandInput),
     );
-    return (result.Items ?? []).map(toTaskSummary);
+    return (result.Items ?? []).map((item) => toTaskSummary(TaskRecordSchema.parse(item)));
   }
 }
 
@@ -92,13 +92,13 @@ function createDocumentClient(region?: string): DynamoDBDocumentClient {
   });
 }
 
-function toTaskSummary(item: Record<string, unknown>): TaskSummary {
+function toTaskSummary(item: TaskRecord): TaskSummary {
   return {
-    task_id: String(item.task_id),
-    project: String(item.project),
-    status: item.status as TaskStatus,
-    delegated_at: String(item.delegated_at),
-    worker: String(item.worker),
-    task_s3_key: String(item.task_s3_key),
+    task_id: item.task_id,
+    project: item.project,
+    status: item.status,
+    delegated_at: item.delegated_at,
+    worker: item.worker,
+    task_s3_key: item.task_s3_key,
   };
 }

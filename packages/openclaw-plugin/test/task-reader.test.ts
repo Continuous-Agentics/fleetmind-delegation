@@ -31,6 +31,12 @@ test("DynamoDbTaskReader selects the stable index for project and global queries
   assert.deepEqual(requests[1]?.ExpressionAttributeValues, { ":pk": "STATUS#accepted" });
 });
 
+test("DynamoDbTaskReader rejects malformed query records at the storage boundary", async () => {
+  const client = { send: async () => ({ Items: [{ ...record, status: "unknown" }] }) };
+  const reader = new DynamoDbTaskReader({ tableName: "tasks", region: "us-west-2" }, client as never);
+  await assert.rejects(() => reader.listByStatus({ status: "accepted" }));
+});
+
 test("listActiveTasks queries every non-terminal task status and orders newest first", async () => {
   const seen: string[] = [];
   const reader = {
@@ -40,7 +46,8 @@ test("listActiveTasks queries every non-terminal task status and orders newest f
       return [{ task_id: status, project: "fleetmind", status, worker: "forge", task_s3_key: "key", delegated_at: status === "delegated" ? "2026-08-10T20:00:00Z" : "2026-08-10T21:00:00Z" }];
     },
   } as never;
-  const tasks = await listActiveTasks(reader, { project: "fleetmind", limit: 10 });
+  const tasks = await listActiveTasks(reader, { project: "fleetmind", limit: 2 });
   assert.deepEqual(seen.sort(), [...ACTIVE_TASK_STATUSES].sort());
-  assert.equal(tasks.at(-1)?.status, "delegated");
+  assert.equal(tasks.length, 2);
+  assert.ok(tasks.every((task) => task.status !== "delegated"));
 });

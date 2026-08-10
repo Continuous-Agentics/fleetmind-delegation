@@ -33,10 +33,16 @@ export async function listActiveTasks(
   reader: TaskReader,
   options: { project?: string; limit?: number },
 ) {
+  // Querying up to the global limit from every status is sufficient to find
+  // the global newest N tasks after merging, without starving a status bucket.
+  const limit = options.limit ?? 20;
   const results = await Promise.all(
-    ACTIVE_TASK_STATUSES.map((status) => reader.listByStatus({ ...options, status })),
+    ACTIVE_TASK_STATUSES.map((status) => reader.listByStatus({ ...options, limit, status })),
   );
-  return results.flat().sort((a, b) => b.delegated_at.localeCompare(a.delegated_at));
+  return results
+    .flat()
+    .sort((a, b) => b.delegated_at.localeCompare(a.delegated_at))
+    .slice(0, limit);
 }
 
 export function formatTask(task: TaskRecord): string {
@@ -61,7 +67,7 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
       name: "fleetmind_task_get",
       label: "Get FleetMind task",
       description: "Read one FleetMind delegation task by its eight-character task ID.",
-      parameters: Type.Object({ taskId: Type.String({ minLength: 8, maxLength: 8 }) }),
+      parameters: Type.Object({ taskId: Type.String({ pattern: "^[0-9a-f]{8}$" }) }),
       async execute(_id, rawParams) {
         const params = rawParams as { taskId: string };
         const task = await getReader().get(params.taskId);

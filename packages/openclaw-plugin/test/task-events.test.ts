@@ -36,3 +36,22 @@ test("NatsTaskEvents routes delegation events to the worker subject", async () =
   });
   assert.equal(subject, "fleetmind.delegation.forge");
 });
+
+test("one subscription cleanup does not drain a shared transport with another subscriber", async () => {
+  let drains = 0;
+  const subscription = () => ({
+    unsubscribe: () => {},
+    async *[Symbol.asyncIterator]() { /* no messages */ },
+  });
+  const connection = { subscribe: subscription, drain: async () => { drains += 1; } };
+  const transport = new NatsTaskEvents(
+    { servers: "nats://nats.example", subjectPrefix: "fleetmind" },
+    async () => connection as never,
+  );
+  const stopPm = await transport.subscribeForPm(() => {});
+  const stopWorker = await transport.subscribeForWorker("forge", () => {});
+  await stopPm();
+  assert.equal(drains, 0);
+  await stopWorker();
+  assert.equal(drains, 1);
+});
