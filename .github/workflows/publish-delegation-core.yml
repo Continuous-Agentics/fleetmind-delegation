@@ -63,7 +63,7 @@ jobs:
           set -euo pipefail
           TAG="${TARGET_TAG}"
           VERSION="${TAG#delegation-core-v}"
-          PACKAGE_VERSION="$(node -p \"require('./packages/delegation-core/package.json').version\")"
+          PACKAGE_VERSION="$(node -p "require('./packages/delegation-core/package.json').version")"
           if [[ "$TAG" == "$VERSION" || "$VERSION" != "$PACKAGE_VERSION" ]]; then
             echo "::error::Tag/version mismatch: tag=$TAG package.json=$PACKAGE_VERSION"
             exit 1
