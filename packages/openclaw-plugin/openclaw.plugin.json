@@ -6,7 +6,6 @@
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
-    "required": ["tableName"],
     "properties": {
       "tableName": {
         "type": "string",

@@ -38,6 +38,23 @@ test("DynamoDbTaskReader rejects malformed query records at the storage boundary
   await assert.rejects(() => reader.listByStatus({ status: "accepted" }));
 });
 
+test("DynamoDbTaskReader continues after a DynamoDB one-megabyte page boundary", async () => {
+  const requests: Array<Record<string, unknown>> = [];
+  const client = {
+    send: async (command: { input: Record<string, unknown> }) => {
+      requests.push(command.input);
+      return requests.length === 1
+        ? { Items: [record], LastEvaluatedKey: { PK: "TASK#cursor" } }
+        : { Items: [{ ...record, PK: "TASK#feedface", task_id: "feedface" }] };
+    },
+  };
+  const reader = new DynamoDbTaskReader({ tableName: "tasks", region: "us-west-2" }, client as never);
+  const tasks = await reader.listByStatus({ status: "accepted", limit: 2 });
+  assert.equal(tasks.length, 2);
+  assert.deepEqual(requests[1]?.ExclusiveStartKey, { PK: "TASK#cursor" });
+  assert.equal(requests[1]?.Limit, 1);
+});
+
 test("listActiveTasks queries every non-terminal task status and orders newest first", async () => {
   const seen: string[] = [];
   const reader = {

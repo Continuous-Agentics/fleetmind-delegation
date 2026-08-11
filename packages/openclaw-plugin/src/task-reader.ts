@@ -67,17 +67,26 @@ export class DynamoDbTaskReader implements TaskReader {
     const hashValue = options.project
       ? gsi1pk(options.project, options.status)
       : gsi2pk(options.status);
-    const result = await this.documentClient.send(
-      new QueryCommand({
-        TableName: this.tableName,
-        IndexName: indexName,
-        KeyConditionExpression: `${hashKey} = :pk`,
-        ExpressionAttributeValues: { ":pk": hashValue },
-        ScanIndexForward: options.ascending !== false,
-        Limit: options.limit,
-      } satisfies QueryCommandInput),
-    );
-    return (result.Items ?? []).map((item) => toTaskSummary(TaskRecordSchema.parse(item)));
+    const summaries: TaskSummary[] = [];
+    let exclusiveStartKey: Record<string, unknown> | undefined;
+    do {
+      const remaining = options.limit === undefined ? undefined : options.limit - summaries.length;
+      if (remaining !== undefined && remaining <= 0) break;
+      const result = await this.documentClient.send(
+        new QueryCommand({
+          TableName: this.tableName,
+          IndexName: indexName,
+          KeyConditionExpression: `${hashKey} = :pk`,
+          ExpressionAttributeValues: { ":pk": hashValue },
+          ScanIndexForward: options.ascending !== false,
+          Limit: remaining,
+          ...(exclusiveStartKey && { ExclusiveStartKey: exclusiveStartKey }),
+        } satisfies QueryCommandInput),
+      );
+      summaries.push(...(result.Items ?? []).map((item) => toTaskSummary(TaskRecordSchema.parse(item))));
+      exclusiveStartKey = result.LastEvaluatedKey;
+    } while (exclusiveStartKey);
+    return summaries;
   }
 }
 

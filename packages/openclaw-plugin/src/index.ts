@@ -104,3 +104,13 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
 });
 
 export default pluginEntry;
+
+export { DynamoDbTaskReader } from "./task-reader.js";
+export type {
+  DynamoDbTaskReaderConfig,
+  ListTasksOptions,
+  TaskReader,
+  TaskSummary,
+} from "./task-reader.js";
+export { NatsTaskEvents } from "./task-events.js";
+export type { NatsTaskEventsConfig, TaskEventHandler } from "./task-events.js";
