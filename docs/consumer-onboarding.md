@@ -20,6 +20,30 @@ You need Node.js 20 or newer. A consumer also needs the existing FleetMind Dynam
 
 Keep AWS credentials outside source control. The runtime identity needs only the access required for the capability it uses. A read-only plugin installation needs `dynamodb:GetItem` and `dynamodb:Query` on the table and its indexes.
 
+If you need to provision or operate the fleet rather than consume its delegation protocol, start with [`@continuous-agentics/fleetmind`](https://www.npmjs.com/package/@continuous-agentics/fleetmind) and its [delegation setup guide](https://github.com/Continuous-Agentics/fleetmind/blob/main/docs/integration/delegation.md). That guide covers the task-ledger infrastructure, FleetMind configuration, and lifecycle model this package preserves.
+
+## Minimal read-only IAM policy
+
+Use a least-privilege policy for the OpenClaw plugin's runtime identity. Replace the region, account ID, and table name with your own values:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["dynamodb:GetItem", "dynamodb:Query"],
+      "Resource": [
+        "arn:aws:dynamodb:us-west-2:123456789012:table/fleetmind-delegation-tasks",
+        "arn:aws:dynamodb:us-west-2:123456789012:table/fleetmind-delegation-tasks/index/*"
+      ]
+    }
+  ]
+}
+```
+
+This is sufficient for the plugin's current read-only tools. Do not grant write actions until a future plugin version explicitly supports lifecycle mutations.
+
 ## Use `delegation-core` from a Node.js service
 
 Install the published package:
@@ -93,6 +117,28 @@ It does **not** create or mutate tasks, subscribe to terminal events, or send Sl
 2. Call `fleetmind_task_list_active` with a small limit.
 3. Call `fleetmind_task_get` for a known task ID.
 4. Verify a least-privilege runtime identity cannot mutate the table.
+
+## Troubleshooting
+
+### `DynamoDB region is not configured`
+
+Set `awsRegion` in the plugin configuration or export `AWS_REGION` / `AWS_DEFAULT_REGION`.
+
+### `AccessDeniedException`
+
+Confirm the runtime identity has `dynamodb:GetItem` on the table and `dynamodb:Query` on both the table and index ARNs.
+
+### List calls fail because an index is missing
+
+The existing delegation table must expose `ProjectStatusIndex` and `StatusIndex`; provision it through FleetMind rather than creating an incompatible table.
+
+### `No FleetMind task found for ...`
+
+Verify the eight-character task ID and that the configured table and region point to the correct fleet. A missing task is a normal read result, not an invitation to create one from the plugin.
+
+### Plugin does not appear after installation
+
+Run `npm run build` before local installation, confirm the package path, then restart the gateway after configuring the plugin.
 
 ## Release and upgrade expectations
 
