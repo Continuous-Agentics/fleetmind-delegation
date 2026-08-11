@@ -1,6 +1,6 @@
 {
   "name": "@continuous-agentics/delegation-core",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Versioned delegation contracts shared by FleetMind and OpenClaw.",
   "license": "MIT",
   "type": "module",
