@@ -1,0 +1,27 @@
+name: Diagnose npm OIDC identity
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    if: github.actor == 'ggettert'
+    steps:
+      - name: Print npm OIDC claim metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl --fail-with-body --silent --show-error \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=npm:registry.npmjs.org")"
+          token="$(jq -r '.value' <<<"${response}")"
+          node - "${token}" <<'NODE'
+          const payload = JSON.parse(Buffer.from(process.argv[2].split('.')[1], 'base64url').toString('utf8'));
+          const fields = ['aud', 'sub', 'repository', 'repository_owner', 'repository_visibility', 'ref', 'sha', 'workflow', 'workflow_ref', 'job_workflow_ref', 'environment', 'event_name', 'actor'];
+          console.log(JSON.stringify(Object.fromEntries(fields.filter((key) => key in payload).map((key) => [key, payload[key]])), null, 2));
+          NODE
