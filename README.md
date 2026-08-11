@@ -6,10 +6,8 @@ Start with the [consumer and onboarding guide](docs/consumer-onboarding.md) to c
 
 ## Packages
 
-- [`@continuous-agentics/delegation-core`](packages/delegation-core): published,
-versioned task, lifecycle, delivery-context, DynamoDB ledger/read, and NATS adapters.
-- [`@continuous-agentics/openclaw-delegation-plugin`](packages/openclaw-plugin):
-OpenClaw integration with read-only task tools built on `delegation-core`.
+- [`@continuous-agentics/delegation-core`](packages/delegation-core): published, versioned task, lifecycle, delivery-context, DynamoDB ledger/read, and NATS adapters.
+- [`@continuous-agentics/openclaw-delegation-plugin`](packages/openclaw-plugin): OpenClaw integration with read-only task tools built on `delegation-core`.
 
 ## Scope of the initial scaffold
 

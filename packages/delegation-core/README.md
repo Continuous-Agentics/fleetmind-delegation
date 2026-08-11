@@ -22,10 +22,8 @@ Node.js 20 or newer is required. The consuming runtime must provide AWS credenti
 
 ## What it exports
 
-- `DynamoDbTaskReader` for read-only task lookup and status queries against a
-FleetMind-compatible DynamoDB task table.
-- `TaskLedger` for conditional task lifecycle writes. Use it rather than raw
-unguarded DynamoDB writes when the service owns a lifecycle transition.
+- `DynamoDbTaskReader` for read-only task lookup and status queries against a FleetMind-compatible DynamoDB task table.
+- `TaskLedger` for conditional task lifecycle writes. Use it rather than raw unguarded DynamoDB writes when the service owns a lifecycle transition.
 - `NatsTaskEvents` for the FleetMind v1.0 task-event envelope and subjects.
 - Versioned task, lifecycle, delivery-context, and event contracts.
 
