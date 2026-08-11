@@ -2,16 +2,14 @@
 
 Channel-neutral delegation runtime packages for FleetMind and OpenClaw.
 
-Start with the [consumer and onboarding guide](docs/consumer-onboarding.md)
-to choose a package, configure access, and verify an installation.
+Start with the [consumer and onboarding guide](docs/consumer-onboarding.md) to choose a package, configure access, and verify an installation.
 
 ## Packages
 
 - [`@continuous-agentics/delegation-core`](packages/delegation-core): published,
-  versioned task, lifecycle, delivery-context, DynamoDB ledger/read, and NATS
-  adapters.
+versioned task, lifecycle, delivery-context, DynamoDB ledger/read, and NATS adapters.
 - [`@continuous-agentics/openclaw-delegation-plugin`](packages/openclaw-plugin):
-  OpenClaw integration with read-only task tools built on `delegation-core`.
+OpenClaw integration with read-only task tools built on `delegation-core`.
 
 ## Scope of the initial scaffold
 
@@ -30,10 +28,7 @@ FleetMind remains responsible for provisioning, templates, health, upgrades, rec
 npm install @continuous-agentics/delegation-core
 ```
 
-The package is compatible with the existing FleetMind DynamoDB task table and
-NATS v1.0 task-event protocol. It does not provision infrastructure or migrate
-records. See the [onboarding guide](docs/consumer-onboarding.md) for Node.js
-and OpenClaw setup, least-privilege access, and current plugin limits.
+The package is compatible with the existing FleetMind DynamoDB task table and NATS v1.0 task-event protocol. It does not provision infrastructure or migrate records. See the [onboarding guide](docs/consumer-onboarding.md) for Node.js and OpenClaw setup, least-privilege access, and current plugin limits.
 
 ## Development
 

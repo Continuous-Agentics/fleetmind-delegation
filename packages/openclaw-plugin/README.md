@@ -2,8 +2,7 @@
 
 An OpenClaw plugin for the FleetMind delegation task ledger.
 
-For full setup, required AWS access, and verification steps, see the repository
-[consumer and onboarding guide](../../docs/consumer-onboarding.md).
+For full setup, required AWS access, and verification steps, see the repository [consumer and onboarding guide](../../docs/consumer-onboarding.md).
 
 ## Current capabilities
 
@@ -35,8 +34,7 @@ The gateway host needs AWS credentials with read-only access to the configured t
 
 ## Install from this repository
 
-The plugin's release lifecycle is separate from `delegation-core`. Until it is
-published, install it from a checkout:
+The plugin's release lifecycle is separate from `delegation-core`. Until it is published, install it from a checkout:
 
 ```bash
 npm ci
@@ -48,6 +46,4 @@ Restart the gateway after adding or changing the configuration.
 
 ## Limits
 
-This version is deliberately read-only. It does not create or update tasks,
-handle terminal task events automatically, or implement Slack or Discord
-delivery.
+This version is deliberately read-only. It does not create or update tasks, handle terminal task events automatically, or implement Slack or Discord delivery.
