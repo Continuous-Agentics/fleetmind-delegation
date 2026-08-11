@@ -27,8 +27,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     if: >-
-      (github.event_name == 'release' && startsWith(github.event.release.tag_name, 'delegation-core-v')) ||
-      (github.event_name == 'workflow_dispatch' && startsWith(inputs.tag, 'delegation-core-v'))
+      github.actor == 'ggettert' && (
+        (github.event_name == 'release' && startsWith(github.event.release.tag_name, 'delegation-core-v')) ||
+        (github.event_name == 'workflow_dispatch' && startsWith(inputs.tag, 'delegation-core-v'))
+      )
     permissions:
       id-token: write
       contents: read
