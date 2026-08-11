@@ -27,6 +27,7 @@ import {
   QueryCommand,
   type QueryCommandInput,
 } from "@aws-sdk/lib-dynamodb";
+import { readFileSync } from "node:fs";
 import {
   TaskRecord,
   TaskRecordSchema,
@@ -492,12 +493,13 @@ export class TaskLedger {
 
     const updateExpression = `SET ${setParts.join(", ")}`;
 
-    // Condition: task exists AND status is not terminal
+    // The read above determines the GSI key when project changes. Require the
+    // status we read so a concurrent lifecycle transition cannot leave the
+    // record with an index key for an obsolete status.
     const conditionExpression =
-      "attribute_exists(PK) AND #st <> :merged AND #st <> :abandoned";
+      "attribute_exists(PK) AND #st = :expected_status";
     exprNames["#st"] = "status";
-    exprValues[":merged"] = "merged";
-    exprValues[":abandoned"] = "abandoned";
+    exprValues[":expected_status"] = current.status;
 
     try {
       const nameCount = Object.keys(exprNames).length;
@@ -521,21 +523,9 @@ export class TaskLedger {
       throw err;
     }
 
-    // Post-trim: if update_history is growing, trim to last 20 entries.
-    // We do a best-effort re-read and conditional trim — acceptable for v1.
+    // Keep the audit history bounded without overwriting a concurrent append.
     if (options?.reason !== undefined) {
-      const after = await this.getTask(taskId);
-      if (after?.update_history && after.update_history.length > 20) {
-        const trimmed = after.update_history.slice(-20);
-        await this.doc.send(
-          new UpdateCommand({
-            TableName: this.table,
-            Key: { PK: taskPK(taskId) },
-            UpdateExpression: "SET update_history = :trimmed",
-            ExpressionAttributeValues: { ":trimmed": trimmed },
-          })
-        );
-      }
+      await this._trimUpdateHistory(taskId);
     }
 
     // Return the updated record
@@ -548,7 +538,6 @@ export class TaskLedger {
   private _resolveUpdatedBy(): string {
     // Try agent.env (fleetmind bot convention)
     try {
-      const { readFileSync } = require("fs") as typeof import("fs");
       const env = readFileSync("/etc/fleetmind/agent.env", "utf8");
       const match = /^AGENT_ID=(.+)$/m.exec(env);
       if (match?.[1]) return match[1].trim();
@@ -675,15 +664,53 @@ export class TaskLedger {
   private async _queryToSummary(
     input: QueryCommandInput
   ): Promise<TaskSummary[]> {
-    const result = await this.doc.send(new QueryCommand(input));
-    return (result.Items ?? []).map((item) => ({
-      task_id: item["task_id"] as string,
-      project: item["project"] as string,
-      status: item["status"] as TaskStatus,
-      delegated_at: item["delegated_at"] as string,
-      worker: item["worker"] as string,
-      task_s3_key: item["task_s3_key"] as string,
-    }));
+    const summaries: TaskSummary[] = [];
+    let exclusiveStartKey: Record<string, unknown> | undefined;
+    do {
+      const remaining = input.Limit === undefined ? undefined : input.Limit - summaries.length;
+      if (remaining !== undefined && remaining <= 0) break;
+      const result = await this.doc.send(new QueryCommand({
+        ...input,
+        Limit: remaining,
+        ...(exclusiveStartKey && { ExclusiveStartKey: exclusiveStartKey }),
+      }));
+      summaries.push(...(result.Items ?? []).map((item) => {
+        const task = TaskRecordSchema.parse(item);
+        return {
+          task_id: task.task_id,
+          project: task.project,
+          status: task.status,
+          delegated_at: task.delegated_at,
+          worker: task.worker,
+          task_s3_key: task.task_s3_key,
+        };
+      }));
+      exclusiveStartKey = result.LastEvaluatedKey;
+    } while (exclusiveStartKey);
+    return summaries;
+  }
+
+  private async _trimUpdateHistory(taskId: string): Promise<void> {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const current = await this.getTask(taskId);
+      const history = current?.update_history;
+      if (!history || history.length <= 20) return;
+      try {
+        await this.doc.send(new UpdateCommand({
+          TableName: this.table,
+          Key: { PK: taskPK(taskId) },
+          UpdateExpression: "SET update_history = :trimmed",
+          ConditionExpression: "update_history = :expected_history",
+          ExpressionAttributeValues: {
+            ":expected_history": history,
+            ":trimmed": history.slice(-20),
+          },
+        }));
+        return;
+      } catch (error) {
+        if (!isConditionFailed(error)) throw error;
+      }
+    }
   }
 }
 
