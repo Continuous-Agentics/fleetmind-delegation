@@ -1,5 +1,32 @@
 # `@continuous-agentics/openclaw-delegation-plugin`
 
-OpenClaw integration boundary for the FleetMind delegation runtime.
+An OpenClaw plugin for the FleetMind delegation task ledger.
 
-This initial scaffold intentionally does not register tools or implement a channel adapter. Those follow after the shared contract package is published and consumed by FleetMind.
+## Current capabilities
+
+- `fleetmind_task_get`: read a task by ID.
+- `fleetmind_task_list_active`: list tasks in the delegated, accepted, shipped, signed-off, or blocked states.
+- Read-only DynamoDB task-ledger adapter that preserves FleetMind record and GSI conventions.
+- NATS v1.0 transport adapter for FleetMind delegation lifecycle events.
+
+The plugin deliberately does **not** yet register lifecycle-writing tools, automatic terminal handling, or Slack/Discord adapters.
+
+## Configuration
+
+```json5
+{
+  plugins: {
+    entries: {
+      "fleetmind-delegation": {
+        enabled: true,
+        config: {
+          tableName: "fleetmind-delegation-tasks",
+          awsRegion: "us-west-2" // optional when AWS_REGION is set
+        }
+      }
+    }
+  }
+}
+```
+
+The gateway host needs AWS credentials with read-only access to the configured task table and its `ProjectStatusIndex` and `StatusIndex` GSIs.

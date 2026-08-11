@@ -1,0 +1,25 @@
+{
+  "id": "fleetmind-delegation",
+  "name": "FleetMind Delegation",
+  "description": "Read-only FleetMind delegation task tools for OpenClaw.",
+  "activation": { "onStartup": true },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "tableName": {
+        "type": "string",
+        "minLength": 1,
+        "description": "FleetMind delegation DynamoDB table name."
+      },
+      "awsRegion": {
+        "type": "string",
+        "minLength": 1,
+        "description": "AWS region for the FleetMind delegation task ledger. Defaults to AWS_REGION."
+      }
+    }
+  },
+  "contracts": {
+    "tools": ["fleetmind_task_get", "fleetmind_task_list_active"]
+  }
+}

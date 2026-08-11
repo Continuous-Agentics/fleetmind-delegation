@@ -5,7 +5,7 @@ Channel-neutral delegation runtime packages for FleetMind and OpenClaw.
 ## Packages
 
 - [`@continuous-agentics/delegation-core`](packages/delegation-core): versioned task, lifecycle, delivery-context, and NATS contracts.
-- [`@continuous-agentics/openclaw-delegation-plugin`](packages/openclaw-plugin): OpenClaw integration boundary; runtime tools and adapters will follow in later slices.
+- [`@continuous-agentics/openclaw-delegation-plugin`](packages/openclaw-plugin): OpenClaw integration with read-only task tools plus DynamoDB and NATS transport adapters.
 
 ## Scope of the initial scaffold
 
