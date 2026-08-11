@@ -1,6 +1,6 @@
 {
   "name": "@continuous-agentics/delegation-core",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Versioned delegation contracts shared by FleetMind and OpenClaw.",
   "license": "MIT",
   "type": "module",
@@ -32,5 +32,10 @@
     "@aws-sdk/client-dynamodb": "^3.1107.0",
     "@aws-sdk/lib-dynamodb": "^3.1107.0",
     "nats": "^2.29.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Continuous-Agentics/fleetmind-delegation.git",
+    "directory": "packages/delegation-core"
   }
 }
