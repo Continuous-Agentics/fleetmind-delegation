@@ -1,48 +1,26 @@
 # Consumer and onboarding guide
 
-This guide covers two public packages in this repository.
+This guide separates the FleetMind product, the published delegation runtime, and the OpenClaw plugin package. They work together, but they are installed and operated differently.
+
+## Choose the right component
+
+### `@continuous-agentics/fleetmind`
+
+[`@continuous-agentics/fleetmind`](https://www.npmjs.com/package/@continuous-agentics/fleetmind) is the fleet operator package. Use it to deploy and manage an OpenClaw multi-agent fleet, including the DynamoDB task-ledger infrastructure and the delegation lifecycle. Its [delegation setup guide](https://github.com/Continuous-Agentics/fleetmind/blob/main/docs/integration/delegation.md) is the canonical starting point when you need a new fleet or task table.
 
 ### `@continuous-agentics/delegation-core`
 
-Use it when a Node.js service needs FleetMind-compatible task ledger, task-reader, or NATS task-event contracts. It is published and ready for consumers.
+`@continuous-agentics/delegation-core` is the published, independently versioned Node.js package in this repository. Use it when a Node.js service needs FleetMind-compatible task ledger, task-reader, or NATS task-event contracts. It does not provision infrastructure or implement a human-facing channel.
 
 ### `@continuous-agentics/openclaw-delegation-plugin`
 
-Use it when an OpenClaw gateway needs read-only visibility into an existing FleetMind task ledger. Its release lifecycle is separate, and it currently offers read-only tools only.
-
-## Relationship to FleetMind
-
-[`@continuous-agentics/fleetmind`](https://www.npmjs.com/package/@continuous-agentics/fleetmind) is the package for deploying and operating OpenClaw multi-agent fleets. `delegation-core` is the smaller, independently versioned extraction of its delegation protocol. It lets FleetMind and compatible integrations share the same task record, lifecycle, and NATS event contracts without requiring the FleetMind provisioning CLI at runtime.
+`@continuous-agentics/openclaw-delegation-plugin` is the OpenClaw plugin package in this repository. Its manifest ID is `fleetmind-delegation`, which is why OpenClaw configuration uses that name. It is currently a read-only integration package and is installed from a repository checkout; it is not the root `@continuous-agentics/fleetmind-delegation` monorepo package.
 
 ## Before you start
 
-You need Node.js 20 or newer. A consumer also needs the existing FleetMind DynamoDB task table, including its `ProjectStatusIndex` and `StatusIndex` GSIs. This repository preserves that data protocol; it does not provision AWS, create a table, or migrate existing records.
+You need Node.js 20 or newer. Both `delegation-core` consumers and the OpenClaw plugin require an existing FleetMind DynamoDB task table with `ProjectStatusIndex` and `StatusIndex` GSIs. This repository preserves that protocol; it does not create a table, provision AWS, or migrate records.
 
 Keep AWS credentials outside source control. The runtime identity needs only the access required for the capability it uses. A read-only plugin installation needs `dynamodb:GetItem` and `dynamodb:Query` on the table and its indexes.
-
-If you need to provision or operate the fleet rather than consume its delegation protocol, start with [`@continuous-agentics/fleetmind`](https://www.npmjs.com/package/@continuous-agentics/fleetmind) and its [delegation setup guide](https://github.com/Continuous-Agentics/fleetmind/blob/main/docs/integration/delegation.md). That guide covers the task-ledger infrastructure, FleetMind configuration, and lifecycle model this package preserves.
-
-## Minimal read-only IAM policy
-
-Use a least-privilege policy for the OpenClaw plugin's runtime identity. Replace the region, account ID, and table name with your own values:
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": ["dynamodb:GetItem", "dynamodb:Query"],
-      "Resource": [
-        "arn:aws:dynamodb:us-west-2:123456789012:table/fleetmind-delegation-tasks",
-        "arn:aws:dynamodb:us-west-2:123456789012:table/fleetmind-delegation-tasks/index/*"
-      ]
-    }
-  ]
-}
-```
-
-This is sufficient for the plugin's current read-only tools. Do not grant write actions until a future plugin version explicitly supports lifecycle mutations.
 
 ## Use `delegation-core` from a Node.js service
 
@@ -52,13 +30,13 @@ Install the published package:
 npm install @continuous-agentics/delegation-core
 ```
 
-Set `AWS_REGION` (or supply `region` directly), then use the read adapter:
+Set `AWS_REGION` or supply `region` directly, then use the read adapter:
 
 ```ts
 import { DynamoDbTaskReader } from "@continuous-agentics/delegation-core";
 
 const reader = new DynamoDbTaskReader({
-  tableName: "fleetmind-delegation-tasks",
+  tableName: "your-fleet-tasks",
   region: process.env.AWS_REGION,
 });
 
@@ -74,9 +52,9 @@ const active = await reader.listByStatus({
 
 `NatsTaskEvents` preserves FleetMind's v1.0 subjects and envelope. Supply a NATS connection configuration plus a `subjectPrefix`; the adapter validates outbound events and reports malformed inbound messages through `onError`.
 
-## Install the OpenClaw plugin from this checkout
+## Install the OpenClaw plugin package
 
-The plugin is intentionally read-only today. From a repository checkout:
+The OpenClaw plugin package is not published yet. Install it from this repository checkout:
 
 ```bash
 npm ci
@@ -84,7 +62,7 @@ npm run build
 openclaw plugins install ./packages/openclaw-plugin
 ```
 
-Configure the installed plugin in OpenClaw's configuration:
+The install command registers the package's manifest ID, `fleetmind-delegation`. Configure that plugin ID in OpenClaw's configuration, replacing `your-fleet-tasks` and the region with the values from the FleetMind deployment:
 
 ```json5
 {
@@ -93,7 +71,7 @@ Configure the installed plugin in OpenClaw's configuration:
       "fleetmind-delegation": {
         enabled: true,
         config: {
-          tableName: "fleetmind-delegation-tasks",
+          tableName: "your-fleet-tasks",
           awsRegion: "us-west-2"
         }
       }
@@ -104,12 +82,34 @@ Configure the installed plugin in OpenClaw's configuration:
 
 `awsRegion` is optional when `AWS_REGION` or `AWS_DEFAULT_REGION` is set. Restart the gateway after changing plugin configuration.
 
-The plugin exposes only:
+The plugin currently exposes only:
 
 - `fleetmind_task_get` — retrieve one eight-character task ID;
 - `fleetmind_task_list_active` — list delegated, accepted, shipped, signed-off, and blocked tasks, optionally scoped to a project.
 
-It does **not** create or mutate tasks, subscribe to terminal events, or send Slack or Discord messages. Those capabilities are planned follow-on work.
+It does not create or mutate tasks, subscribe to terminal events, or send Slack or Discord messages. Those capabilities are planned follow-on work.
+
+## Minimal read-only IAM policy
+
+Use a least-privilege policy for the OpenClaw plugin's runtime identity. Replace the region, account ID, and table name with your own values:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["dynamodb:GetItem", "dynamodb:Query"],
+      "Resource": [
+        "arn:aws:dynamodb:us-west-2:123456789012:table/your-fleet-tasks",
+        "arn:aws:dynamodb:us-west-2:123456789012:table/your-fleet-tasks/index/*"
+      ]
+    }
+  ]
+}
+```
+
+This is sufficient for the plugin's current read-only tools. Do not grant write actions until a future plugin version explicitly supports lifecycle mutations.
 
 ## Verify an installation
 
