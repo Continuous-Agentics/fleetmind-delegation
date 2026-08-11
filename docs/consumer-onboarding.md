@@ -1,11 +1,27 @@
 # Consumer and onboarding guide
 
-This guide covers the two public packages in this repository:
+This guide covers two public packages in this repository.
 
-| Package | Use it when | Current maturity |
-| --- | --- | --- |
-| [`@continuous-agentics/delegation-core`](../packages/delegation-core) | Your Node.js service needs FleetMind-compatible task ledger, task-reader, or NATS task-event contracts. | Published and ready for consumers. |
-| [`@continuous-agentics/openclaw-delegation-plugin`](../packages/openclaw-plugin) | An OpenClaw gateway needs read-only visibility into an existing FleetMind task ledger. | Read-only tools only; its publishing lifecycle is separate. |
+### `@continuous-agentics/delegation-core`
+
+Use it when a Node.js service needs FleetMind-compatible task ledger,
+task-reader, or NATS task-event contracts. It is published and ready for
+consumers.
+
+### `@continuous-agentics/openclaw-delegation-plugin`
+
+Use it when an OpenClaw gateway needs read-only visibility into an existing
+FleetMind task ledger. Its release lifecycle is separate, and it currently
+offers read-only tools only.
+
+## Relationship to FleetMind
+
+[`@continuous-agentics/fleetmind`](https://www.npmjs.com/package/@continuous-agentics/fleetmind)
+is the package for deploying and operating OpenClaw multi-agent fleets.
+`delegation-core` is the smaller, independently versioned extraction of its
+delegation protocol. It lets FleetMind and compatible integrations share the
+same task record, lifecycle, and NATS event contracts without requiring the
+FleetMind provisioning CLI at runtime.
 
 ## Before you start
 

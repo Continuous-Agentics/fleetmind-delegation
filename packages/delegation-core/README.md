@@ -3,6 +3,18 @@
 Versioned, channel-neutral task and lifecycle runtime shared by FleetMind and
 the OpenClaw delegation plugin.
 
+## How this relates to FleetMind
+
+[`@continuous-agentics/fleetmind`](https://www.npmjs.com/package/@continuous-agentics/fleetmind)
+deploys and manages OpenClaw multi-agent fleets. This package extracts its
+stable delegation contracts into a small, independently versioned runtime, so
+FleetMind and OpenClaw integrations can share the same DynamoDB task, lifecycle,
+and NATS event protocol without depending on FleetMind's provisioning CLI.
+
+Use `@continuous-agentics/fleetmind` to operate a fleet. Use
+`@continuous-agentics/delegation-core` when building a compatible integration
+that needs the delegation protocol itself.
+
 It owns the FleetMind-compatible DynamoDB ledger, read adapter, NATS v1.0
 adapter, and their contracts. It intentionally contains no channel API or
 OpenClaw runtime implementation.
