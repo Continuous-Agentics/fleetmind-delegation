@@ -1,7 +1,7 @@
 {
   "id": "fleetmind-delegation",
   "name": "FleetMind Delegation",
-  "description": "Read-only FleetMind delegation task tools for OpenClaw.",
+  "description": "FleetMind delegation task read and lifecycle-transition tools for OpenClaw.",
   "activation": { "onStartup": true },
   "configSchema": {
     "type": "object",
@@ -20,6 +20,14 @@
     }
   },
   "contracts": {
-    "tools": ["fleetmind_task_get", "fleetmind_task_list_active"]
+    "tools": [
+      "fleetmind_task_get",
+      "fleetmind_task_list_active",
+      "fleetmind_task_ack",
+      "fleetmind_task_ship",
+      "fleetmind_task_block",
+      "fleetmind_task_signoff",
+      "fleetmind_task_merge"
+    ]
   }
 }
