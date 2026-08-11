@@ -75,6 +75,47 @@ export function taskPK(taskId: string): string {
   return `TASK#${taskId}`;
 }
 
+export interface S3KeyContext {
+  project: string;
+  date: string;
+  task_id: string;
+}
+
+export function renderS3Key(template: string, ctx: S3KeyContext): string {
+  return template
+    .replace("{project}", ctx.project)
+    .replace("{date}", ctx.date)
+    .replace("{task_id}", ctx.task_id);
+}
+
+export const DEFAULT_S3_KEY_TEMPLATE = "v0/projects/{project}/tasks/{date}-{task_id}.md";
+
+export interface CreateTaskInput {
+  task_id: string;
+  project: string;
+  delegated_by: string;
+  worker: string;
+  definition_of_done: string;
+  delegation_thread?: string;
+  delegation_envelope_ts?: string;
+  delivery_context?: DeliveryContext;
+  tracker_link?: string | null;
+  lifecycle?: Lifecycle;
+  description?: string;
+  requestor?: string;
+  delegated_at?: string;
+  s3_key_template?: string;
+}
+
+export interface TaskSummary {
+  task_id: string;
+  project: string;
+  status: TaskStatus;
+  delegated_at: string;
+  worker: string;
+  task_s3_key: string;
+}
+
 export function gsi1pk(project: string, status: TaskStatus): string {
   return `PROJECT#${project}#STATUS#${status}`;
 }

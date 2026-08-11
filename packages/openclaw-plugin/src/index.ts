@@ -1,7 +1,11 @@
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { Type } from "typebox";
 import type { TaskRecord, TaskStatus } from "@continuous-agentics/delegation-core";
-import { DynamoDbTaskReader, type TaskReader } from "./task-reader.js";
+import {
+  DynamoDbTaskReader,
+  type TaskReader,
+  type TaskSummary,
+} from "@continuous-agentics/delegation-core";
 
 export const pluginPackageName = "@continuous-agentics/openclaw-delegation-plugin";
 export const ACTIVE_TASK_STATUSES: TaskStatus[] = [
@@ -32,7 +36,7 @@ function readConfig(config: Record<string, unknown>): PluginConfig {
 export async function listActiveTasks(
   reader: TaskReader,
   options: { project?: string; limit?: number },
-) {
+): Promise<TaskSummary[]> {
   // Querying up to the global limit from every status is sufficient to find
   // the global newest N tasks after merging, without starving a status bucket.
   const limit = options.limit ?? 20;
@@ -105,12 +109,15 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
 
 export default pluginEntry;
 
-export { DynamoDbTaskReader } from "./task-reader.js";
+export {
+  DynamoDbTaskReader,
+  NatsTaskEvents,
+} from "@continuous-agentics/delegation-core";
 export type {
   DynamoDbTaskReaderConfig,
   ListTasksOptions,
+  NatsTaskEventsConfig,
+  TaskEventHandler,
   TaskReader,
   TaskSummary,
-} from "./task-reader.js";
-export { NatsTaskEvents } from "./task-events.js";
-export type { NatsTaskEventsConfig, TaskEventHandler } from "./task-events.js";
+} from "@continuous-agentics/delegation-core";

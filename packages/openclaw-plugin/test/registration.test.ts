@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import plugin from "../src/index.js";
-import { DynamoDbTaskReader, NatsTaskEvents } from "../src/index.js";
+import plugin, { DynamoDbTaskReader, NatsTaskEvents } from "../src/index.js";
 
 test("plugin registers exactly the declared read-only task tools without configured infrastructure", () => {
   const tools: Array<{ name: string }> = [];
