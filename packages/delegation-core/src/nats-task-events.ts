@@ -5,7 +5,7 @@ import {
   taskSubject,
   TaskEventSchema,
   type TaskEvent,
-} from "@continuous-agentics/delegation-core";
+} from "./contracts.js";
 
 export interface NatsTaskEventsConfig extends ConnectionOptions {
   subjectPrefix: string;

@@ -6,8 +6,7 @@ An OpenClaw plugin for the FleetMind delegation task ledger.
 
 - `fleetmind_task_get`: read a task by ID.
 - `fleetmind_task_list_active`: list tasks in the delegated, accepted, shipped, signed-off, or blocked states.
-- Read-only DynamoDB task-ledger adapter that preserves FleetMind record and GSI conventions.
-- NATS v1.0 transport adapter for FleetMind delegation lifecycle events.
+- Uses the shared `delegation-core` DynamoDB and NATS adapters, preserving FleetMind record, GSI, and event conventions.
 
 The plugin deliberately does **not** yet register lifecycle-writing tools, automatic terminal handling, or Slack/Discord adapters.
 

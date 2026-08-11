@@ -25,9 +25,12 @@
   },
   "scripts": {
     "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
-    "test": "tsc -p tsconfig.test.json && node --test 'test-dist/test/**/*.test.js'"
+    "test": "node -e \"require('fs').rmSync('test-dist',{recursive:true,force:true})\" && tsc -p tsconfig.test.json && node --test 'test-dist/test/**/*.test.js'"
   },
   "dependencies": {
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "@aws-sdk/client-dynamodb": "^3.1107.0",
+    "@aws-sdk/lib-dynamodb": "^3.1107.0",
+    "nats": "^2.29.3"
   }
 }

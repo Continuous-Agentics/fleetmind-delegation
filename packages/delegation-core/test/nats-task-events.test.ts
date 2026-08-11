@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { StringCodec } from "nats";
-import { NatsTaskEvents } from "../src/task-events.js";
+import { NatsTaskEvents } from "../src/nats-task-events.js";
 
 test("NatsTaskEvents publishes frozen v1.0 event envelopes to the compatible subject", async () => {
   const published: Array<{ subject: string; data: Uint8Array }> = [];

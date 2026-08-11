@@ -15,16 +15,8 @@ import {
   TaskRecordSchema,
   type TaskRecord,
   type TaskStatus,
-} from "@continuous-agentics/delegation-core";
-
-export interface TaskSummary {
-  task_id: string;
-  project: string;
-  status: TaskStatus;
-  delegated_at: string;
-  worker: string;
-  task_s3_key: string;
-}
+  type TaskSummary,
+} from "./contracts.js";
 
 export interface TaskReader {
   get(taskId: string): Promise<TaskRecord | undefined>;
