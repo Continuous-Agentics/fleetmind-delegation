@@ -114,3 +114,19 @@ test("NatsTaskEvents reports consumer failures without terminating subscription 
   assert.equal((result.error as Error).message, "consumer failed");
   assert.equal((result.event as { task_id: string }).task_id, "deadbeef");
 });
+
+test("NatsTaskEvents reports an unexpected NATS iterator failure", async () => {
+  let report!: (error: unknown) => void;
+  const reported = new Promise<unknown>((resolve) => { report = resolve; });
+  const subscription = {
+    unsubscribe: () => {},
+    async *[Symbol.asyncIterator]() { throw new Error("connection lost"); },
+  };
+  const connection = { subscribe: () => subscription, drain: async () => {} };
+  const transport = new NatsTaskEvents(
+    { servers: "nats://nats.example", subjectPrefix: "fleetmind", onError: (error) => report(error) },
+    async () => connection as never,
+  );
+  await transport.subscribeForPm(() => {});
+  assert.equal((await reported as Error).message, "connection lost");
+});

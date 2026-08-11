@@ -84,7 +84,22 @@ export class NatsTaskEvents {
     const token = Symbol("subscription");
     const generation = this.generation;
     this.subscriptions.add(token);
-    void (async () => {
+    void this.consume(subscription, handler);
+    let closed = false;
+    return async () => {
+      if (closed) return;
+      closed = true;
+      subscription.unsubscribe();
+      if (generation !== this.generation || !this.subscriptions.delete(token)) return;
+      if (this.subscriptions.size === 0) await this.close();
+    };
+  }
+
+  private async consume(
+    subscription: AsyncIterable<{ data: Uint8Array }>,
+    handler: TaskEventHandler,
+  ): Promise<void> {
+    try {
       for await (const message of subscription) {
         try {
           const parsed = TaskEventSchema.safeParse(JSON.parse(this.codec.decode(message.data)));
@@ -102,20 +117,19 @@ export class NatsTaskEvents {
           this.reportError(error);
         }
       }
-    })();
-    let closed = false;
-    return async () => {
-      if (closed) return;
-      closed = true;
-      subscription.unsubscribe();
-      if (generation !== this.generation || !this.subscriptions.delete(token)) return;
-      if (this.subscriptions.size === 0) await this.close();
-    };
+    } catch (error) {
+      // NATS can terminate the iterator independently of individual messages.
+      this.reportError(error);
+    }
   }
 
   private reportError(error: unknown, event?: TaskEvent): void {
     if (this.config.onError) {
-      this.config.onError(error, event);
+      try {
+        this.config.onError(error, event);
+      } catch (onErrorFailure) {
+        console.error("[fleetmind-delegation] NATS error handler failed", onErrorFailure);
+      }
       return;
     }
     console.error("[fleetmind-delegation] NATS task-event handling failed", error);
