@@ -2,10 +2,16 @@
 
 Channel-neutral delegation runtime packages for FleetMind and OpenClaw.
 
+Start with the [consumer and onboarding guide](docs/consumer-onboarding.md)
+to choose a package, configure access, and verify an installation.
+
 ## Packages
 
-- [`@continuous-agentics/delegation-core`](packages/delegation-core): versioned task, lifecycle, delivery-context, DynamoDB ledger/read, and NATS adapters.
-- [`@continuous-agentics/openclaw-delegation-plugin`](packages/openclaw-plugin): OpenClaw integration with read-only task tools built on `delegation-core`.
+- [`@continuous-agentics/delegation-core`](packages/delegation-core): published,
+  versioned task, lifecycle, delivery-context, DynamoDB ledger/read, and NATS
+  adapters.
+- [`@continuous-agentics/openclaw-delegation-plugin`](packages/openclaw-plugin):
+  OpenClaw integration with read-only task tools built on `delegation-core`.
 
 ## Scope of the initial scaffold
 
@@ -17,6 +23,17 @@ This repository preserves the FleetMind delegation contract without changing beh
 - legacy task records with Slack correlation fields.
 
 FleetMind remains responsible for provisioning, templates, health, upgrades, recovery, and its optional operator CLI. The plugin will own live OpenClaw tools, terminal handling, and channel delivery.
+
+## Consumer quick start
+
+```bash
+npm install @continuous-agentics/delegation-core
+```
+
+The package is compatible with the existing FleetMind DynamoDB task table and
+NATS v1.0 task-event protocol. It does not provision infrastructure or migrate
+records. See the [onboarding guide](docs/consumer-onboarding.md) for Node.js
+and OpenClaw setup, least-privilege access, and current plugin limits.
 
 ## Development
 
