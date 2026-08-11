@@ -9,6 +9,8 @@ import {
 
 export interface NatsTaskEventsConfig extends ConnectionOptions {
   subjectPrefix: string;
+  /** Receives malformed transport data and consumer failures without stopping subscriptions. */
+  onError?: (error: unknown, event?: TaskEvent) => void;
 }
 
 export type TaskEventHandler = (event: TaskEvent) => Promise<void> | void;
@@ -23,7 +25,8 @@ export class NatsTaskEvents {
   private readonly codec = StringCodec();
   private connection?: NatsConnection;
   private connectionPromise?: Promise<NatsConnection>;
-  private activeSubscriptions = 0;
+  private readonly subscriptions = new Set<symbol>();
+  private generation = 0;
 
   constructor(
     private readonly config: NatsTaskEventsConfig,
@@ -48,13 +51,15 @@ export class NatsTaskEvents {
     const connection = this.connection ?? await this.connectionPromise;
     this.connection = undefined;
     this.connectionPromise = undefined;
-    this.activeSubscriptions = 0;
+    this.subscriptions.clear();
+    this.generation += 1;
     if (connection) await connection.drain();
   }
 
   private async getConnection(): Promise<NatsConnection> {
     if (this.connection) return this.connection;
-    this.connectionPromise ??= this.connectFn(this.config)
+    const { subjectPrefix: _subjectPrefix, onError: _onError, ...connectionOptions } = this.config;
+    this.connectionPromise ??= this.connectFn(connectionOptions)
       .then((connection) => {
         this.connection = connection;
         return connection;
@@ -76,14 +81,25 @@ export class NatsTaskEvents {
   private async subscribe(subject: string, handler: TaskEventHandler): Promise<() => Promise<void>> {
     const connection = await this.getConnection();
     const subscription = connection.subscribe(subject);
-    this.activeSubscriptions += 1;
+    const token = Symbol("subscription");
+    const generation = this.generation;
+    this.subscriptions.add(token);
     void (async () => {
       for await (const message of subscription) {
         try {
           const parsed = TaskEventSchema.safeParse(JSON.parse(this.codec.decode(message.data)));
-          if (parsed.success) await handler(parsed.data);
-        } catch {
-          // Ignore malformed transport input; a peer must not terminate this subscriber.
+          if (!parsed.success) {
+            this.reportError(parsed.error);
+            continue;
+          }
+          try {
+            await handler(parsed.data);
+          } catch (error) {
+            this.reportError(error, parsed.data);
+          }
+        } catch (error) {
+          // A malformed peer message must not terminate this subscriber.
+          this.reportError(error);
         }
       }
     })();
@@ -92,8 +108,16 @@ export class NatsTaskEvents {
       if (closed) return;
       closed = true;
       subscription.unsubscribe();
-      this.activeSubscriptions = Math.max(0, this.activeSubscriptions - 1);
-      if (this.activeSubscriptions === 0) await this.close();
+      if (generation !== this.generation || !this.subscriptions.delete(token)) return;
+      if (this.subscriptions.size === 0) await this.close();
     };
+  }
+
+  private reportError(error: unknown, event?: TaskEvent): void {
+    if (this.config.onError) {
+      this.config.onError(error, event);
+      return;
+    }
+    console.error("[fleetmind-delegation] NATS task-event handling failed", error);
   }
 }

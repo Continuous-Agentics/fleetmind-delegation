@@ -73,3 +73,44 @@ test("concurrent first use shares one in-flight NATS connection", async () => {
   ]);
   assert.equal(connects, 1);
 });
+
+test("stale cleanup cannot drain a connection opened after explicit close", async () => {
+  const drains: string[] = [];
+  const subscription = () => ({ unsubscribe: () => {}, async *[Symbol.asyncIterator]() { /* no messages */ } });
+  const connections = [
+    { subscribe: subscription, drain: async () => { drains.push("first"); } },
+    { subscribe: subscription, drain: async () => { drains.push("second"); } },
+  ];
+  const transport = new NatsTaskEvents(
+    { servers: "nats://nats.example", subjectPrefix: "fleetmind" },
+    async () => connections.shift() as never,
+  );
+  const oldCleanup = await transport.subscribeForPm(() => {});
+  await transport.close();
+  const newCleanup = await transport.subscribeForPm(() => {});
+  await oldCleanup();
+  assert.deepEqual(drains, ["first"]);
+  await newCleanup();
+  assert.deepEqual(drains, ["first", "second"]);
+});
+
+test("NatsTaskEvents reports consumer failures without terminating subscription processing", async () => {
+  const codec = StringCodec();
+  let report!: (value: { error: unknown; event?: unknown }) => void;
+  const reported = new Promise<{ error: unknown; event?: unknown }>((resolve) => { report = resolve; });
+  const subscription = {
+    unsubscribe: () => {},
+    async *[Symbol.asyncIterator]() {
+      yield { data: codec.encode(JSON.stringify({ v: "1.0", event: "ship", task_id: "deadbeef", worker: "forge", at: "2026-08-10T20:00:00Z" })) };
+    },
+  };
+  const connection = { subscribe: () => subscription, drain: async () => {} };
+  const transport = new NatsTaskEvents(
+    { servers: "nats://nats.example", subjectPrefix: "fleetmind", onError: (error, event) => report({ error, event }) },
+    async () => connection as never,
+  );
+  await transport.subscribeForPm(() => { throw new Error("consumer failed"); });
+  const result = await reported;
+  assert.equal((result.error as Error).message, "consumer failed");
+  assert.equal((result.event as { task_id: string }).task_id, "deadbeef");
+});
