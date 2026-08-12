@@ -217,6 +217,9 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
         // Keep the opt-in service dormant even when the lifecycle-tool config
         // is intentionally absent.
         if ((api.pluginConfig ?? {})["terminalEvents"] === undefined) return;
+        await stopTerminalEvents?.();
+        stopTerminalEvents = undefined;
+        await Promise.allSettled([...terminalHandlers]);
         const generation = ++terminalEventGeneration;
         const config = getConfig().terminalEvents!;
         const transport = new NatsTaskEvents({ servers: config.natsServers, subjectPrefix: config.subjectPrefix, onError: (error) => ctx.logger.error(`FleetMind terminal NATS error: ${String(error)}`) });
@@ -250,6 +253,7 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
                 messageChannel: target?.channel,
                 messageProvider: target?.channel,
                 messageTo: target?.conversationId,
+                messageThreadId: target?.threadId,
                 currentChannelId: target?.conversationId,
                 currentThreadTs: target?.threadId,
                 agentAccountId: target?.accountId,
