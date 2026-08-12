@@ -21,7 +21,7 @@ Lifecycle transitions use `TaskLedger` conditional writes, so the task state mac
 
 `fleetmind_task_signoff` and `fleetmind_task_merge` are human-authority transitions. They are optional tools in the manifest and fail closed in a `before_tool_call` hook unless the calling OpenClaw agent ID appears in configured `reviewerAgentIds`.
 
-The plugin deliberately does not handle terminal NATS events automatically, provide Slack/Discord adapters, create tasks, or publish/release packages.
+Terminal and worker-event NATS services are opt-in. When configured, they require an authoritative task-ledger record before routing or waking an agent, post best-effort Slack receipts, and wake the matching OpenClaw thread session. Discord delivery remains out of scope. The plugin does not create tasks or publish/release packages.
 
 ## Install from this repository
 
@@ -57,6 +57,26 @@ Configure that manifest ID in OpenClaw, replacing the placeholders with the task
 
 `awsRegion` is optional when `AWS_REGION` or `AWS_DEFAULT_REGION` is set. Configure `workerAgentIds` to bind each worker agent to its FleetMind worker ID. Configure `reviewerAgentIds` with only the designated human-reviewer agent IDs before allowlisting sign-off or merge. The gateway host needs DynamoDB read/write access to the configured task table and its `ProjectStatusIndex` and `StatusIndex` GSIs. Restart the gateway after adding or changing the configuration.
 
+### Optional NATS and Slack delivery
+
+`terminalEvents` enables the PM subscriber for `ship` and `block`. `delegationEvents` enables a worker subscriber for one configured OpenClaw agent. Set `workerHomeSlack` to open each delegated task in a fresh worker-home-channel thread; without it, a Slack task falls back to the authoritative planning thread. The worker service atomically acknowledges (claims) the delegated task before posting a receipt or waking the agent, so duplicate NATS deliveries do not start duplicate worker runs. Slack receipt failure never prevents the claimed task's worker wake; a wake failure leaves the claimed task for operational reconciliation.
+
+```json5
+{
+  terminalEvents: {
+    natsServers: ["nats://nats.example:4222"],
+    subjectPrefix: "fleetmind",
+    pmAgentId: "conductor"
+  },
+  delegationEvents: {
+    natsServers: ["nats://nats.example:4222"],
+    subjectPrefix: "fleetmind",
+    agentId: "forge-agent",
+    workerHomeSlack: { accountId: "default", conversationId: "C0123456789" }
+  }
+}
+```
+
 ## Limits
 
-This version does not create tasks, handle terminal task events automatically, or implement Slack or Discord delivery.
+This version does not create tasks, implement Discord delivery, or publish/release packages.
