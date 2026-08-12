@@ -1,6 +1,11 @@
 # Changelog
 
-All notable changes to this repository are documented here. The packages have independent release lifecycles; entries identify the affected package.
+All notable changes to this repository are documented here. This monorepo contains two independently versioned npm packages; every entry identifies the affected package.
+
+| Package | Release-tag prefix | Publication status |
+| --- | --- | --- |
+| `@continuous-agentics/delegation-core` | `delegation-core-v` | Published to npm |
+| `@continuous-agentics/openclaw-delegation-plugin` | `openclaw-delegation-plugin-v` | Package source exists; npm publishing workflow is not enabled yet |
 
 This project follows [Semantic Versioning](https://semver.org/). Release notes complement this changelog when a release is published.
 
@@ -9,6 +14,15 @@ This project follows [Semantic Versioning](https://semver.org/). Release notes c
 ### Added
 
 - Contributor, security, support, release, architecture, protocol, and compatibility documentation for the monorepo.
+- Release/changelog conventions for both npm packages.
+
+## `@continuous-agentics/openclaw-delegation-plugin`
+
+### Unreleased
+
+- Initial package source and OpenClaw manifest. The package is built and tested in this monorepo, but has not been published to npm.
+
+## `@continuous-agentics/delegation-core`
 
 ## [delegation-core-v0.1.2] - 2026-08-11
 

@@ -18,10 +18,10 @@ npm test
 
 Maintainers may clone the upstream repository directly.
 
-This is an npm-workspace monorepo:
+This is an npm-workspace monorepo with two independently versioned packages:
 
-- `packages/delegation-core` is the published compatibility runtime.
-- `packages/openclaw-plugin` is the OpenClaw integration boundary.
+- `packages/delegation-core` → `@continuous-agentics/delegation-core`, the published compatibility runtime.
+- `packages/openclaw-plugin` → `@continuous-agentics/openclaw-delegation-plugin`, the OpenClaw integration boundary. Its package source is versioned and tested here; npm publishing is not enabled yet.
 
 ## Tests and compatibility
 
@@ -52,7 +52,7 @@ A pull request should:
 - explain the behavioral and compatibility impact;
 - link its issue when applicable (`Closes #123` or `Refs #123`);
 - include the commands and results used for verification;
-- update documentation and `CHANGELOG.md` for public behavior, packaging, protocol, configuration, or release-process changes;
+- update documentation and the package-scoped section of `CHANGELOG.md` for public behavior, packaging, protocol, configuration, or release-process changes;
 - have green CI and maintainer approval before merge.
 
 Keep unrelated refactors out of protocol or security fixes. Never commit credentials, AWS account details, NATS URLs containing credentials, task contents containing sensitive information, or package tokens.
@@ -69,4 +69,4 @@ Keep unrelated refactors out of protocol or security fixes. Never commit credent
 
 ## Releases
 
-Releases are maintainer-only. `delegation-core` uses package-specific tags such as `delegation-core-v0.1.3`; a tag creates a draft GitHub Release, and publication of that release is the deliberate npm Trusted Publishing gate. Read [RELEASING.md](RELEASING.md) before preparing a release.
+Releases are maintainer-only. Each package has an independent version and package-scoped changelog section. `delegation-core` uses tags such as `delegation-core-v0.1.3`; a tag creates a draft GitHub Release, and publication of that release is the deliberate npm Trusted Publishing gate. The plugin has no publication workflow yet, so its package version must not be tagged or published until its release automation and Trusted Publisher are explicitly added. Read [RELEASING.md](RELEASING.md) before preparing either package for release.
