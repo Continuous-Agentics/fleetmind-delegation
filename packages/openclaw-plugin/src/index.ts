@@ -209,17 +209,20 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
     };
 
     let stopTerminalEvents: (() => Promise<void>) | undefined;
+    let terminalEventGeneration = 0;
+    let terminalHandlers = new Set<Promise<void>>();
     api.registerService({
       id: "fleetmind-delegation-terminal-events",
       async start(ctx) {
         // Keep the opt-in service dormant even when the lifecycle-tool config
         // is intentionally absent.
         if ((api.pluginConfig ?? {})["terminalEvents"] === undefined) return;
+        const generation = ++terminalEventGeneration;
         const config = getConfig().terminalEvents!;
         const transport = new NatsTaskEvents({ servers: config.natsServers, subjectPrefix: config.subjectPrefix, onError: (error) => ctx.logger.error(`FleetMind terminal NATS error: ${String(error)}`) });
-        stopTerminalEvents = await transport.subscribeForPm(async (event) => {
-          if (event.event !== "ship" && event.event !== "block") return;
-          await handleTerminalTaskEvent(event as typeof event & { event: "ship" | "block" }, {
+        const dispose = await transport.subscribeForPm((event) => {
+          if (event.event !== "ship" && event.event !== "block" || generation !== terminalEventGeneration) return;
+          const handler = handleTerminalTaskEvent(event as typeof event & { event: "ship" | "block" }, {
             ledger: getLedger(),
             pmAgentId: config.pmAgentId,
             wakePm: async (agentId, prompt, delivery, legacyThreadUrl) => {
@@ -237,8 +240,8 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
                 }
               }
               const result = await api.runtime.agent.runEmbeddedAgent({
-                sessionId: target?.sessionKey ?? `fleetmind-delegation:${randomUUID()}`,
-                sessionKey: target?.sessionKey,
+                sessionId: target?.sessionKey ?? `agent:${agentId}:main`,
+                sessionKey: target?.sessionKey ?? `agent:${agentId}:main`,
                 runId: randomUUID(),
                 agentId,
                 workspaceDir: api.runtime.agent.resolveAgentWorkspaceDir(ctx.config, agentId),
@@ -267,9 +270,25 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
             onError: (message, error) => ctx.logger.error(`${message} ${String(error)}`),
             onInfo: (message) => ctx.logger.info(message),
           });
+          terminalHandlers.add(handler);
+          void handler.then(
+            () => terminalHandlers.delete(handler),
+            () => terminalHandlers.delete(handler),
+          );
+          return handler;
         });
+        if (generation !== terminalEventGeneration) {
+          await dispose();
+          return;
+        }
+        stopTerminalEvents = dispose;
       },
-      async stop() { await stopTerminalEvents?.(); stopTerminalEvents = undefined; },
+      async stop() {
+        terminalEventGeneration += 1;
+        await stopTerminalEvents?.();
+        stopTerminalEvents = undefined;
+        await Promise.allSettled([...terminalHandlers]);
+      },
     });
 
     api.registerTool({
