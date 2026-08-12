@@ -44,3 +44,26 @@ test("terminal handling contains a PM wake failure", async () => {
   }));
   assert.deepEqual(errors, ["Could not wake PM for task deadbeef."]);
 });
+
+test("terminal handling keeps an authoritative legacy thread over event delivery", async () => {
+  const wakes: unknown[][] = [];
+  await handleTerminalTaskEvent({
+    v: "1.0", event: "ship", task_id: "deadbeef", worker: "forge", at: "2026-08-11T00:00:00Z",
+    delivery_context: { provider: "discord", accountId: "main", conversationId: "attacker" },
+  }, {
+    ledger: ledger(async () => task({ delegation_thread: "https://x.slack.com/archives/C123/p123456789012" })),
+    pmAgentId: "conductor", wakePm: (...args) => { wakes.push(args); },
+  });
+  assert.deepEqual(wakes[0]?.slice(2), [undefined, "https://x.slack.com/archives/C123/p123456789012"]);
+});
+
+test("terminal handling does not report review after a PM wake failure", async () => {
+  const errors: string[] = [];
+  const infos: string[] = [];
+  await handleTerminalTaskEvent({ v: "1.0", event: "ship", task_id: "deadbeef", worker: "forge", at: "2026-08-11T00:00:00Z" }, {
+    ledger: ledger(async () => task()), pmAgentId: "conductor", wakePm: () => { throw new Error("wake failed"); },
+    onError: (message) => { errors.push(message); }, onInfo: (message) => { infos.push(message); },
+  });
+  assert.deepEqual(errors, ["Could not wake PM for task deadbeef."]);
+  assert.deepEqual(infos, []);
+});

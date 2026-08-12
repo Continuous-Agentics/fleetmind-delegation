@@ -39,11 +39,12 @@ export async function handleTerminalTaskEvent(
     await deps.wakePm(
       deps.pmAgentId,
       message,
-      task?.delivery_context ?? event.delivery_context,
+      task?.delivery_context ?? (task?.delegation_thread ? undefined : event.delivery_context),
       task?.delegation_thread || event.delegation_thread,
     );
   } catch (error) {
     deps.onError?.(`Could not wake PM for task ${event.task_id}.`, error);
+    return;
   }
 
   // Workers have already performed the conditional DDB transition. A shipped
