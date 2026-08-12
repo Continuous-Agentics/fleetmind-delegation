@@ -19,6 +19,7 @@ export interface TerminalEventDependencies {
  * Handle a terminal worker event without owning the human review decision.
  * The DDB task record is authoritative for delivery routing and worker identity.
  * A missing or unreadable record may wake the PM only through its neutral session.
+ * NATS free text is never included in the PM prompt.
  */
 export async function handleTerminalTaskEvent(
   event: TerminalTaskEvent,
@@ -35,9 +36,9 @@ export async function handleTerminalTaskEvent(
     return;
   }
 
-  const message = event.event === "ship"
-    ? `NATS: Task ${event.task_id} shipped by ${event.worker}.${event.message ? ` ${event.message}` : ""}`
-    : `NATS: Task ${event.task_id} blocked by ${event.worker}.${event.reason ? ` ${event.reason}` : ""}`;
+  const message = task
+    ? `FleetMind terminal event received for task ${task.task_id}. Review the authoritative task ledger before taking any action.`
+    : `FleetMind received an unverified terminal event for task ${event.task_id}. Inspect the task ledger before taking any action.`;
 
   try {
     await deps.wakePm(
@@ -53,9 +54,7 @@ export async function handleTerminalTaskEvent(
 
   // Workers have already performed the conditional DDB transition. A shipped
   // task requiring sign-off must remain there for an authorized human action.
-  if (event.event === "block") {
-    deps.onInfo?.(`Task ${event.task_id} is blocked by ${event.worker}${event.reason ? `: ${event.reason}` : ""}`);
-  } else {
-    deps.onInfo?.(`Task ${event.task_id} shipped by ${event.worker}; awaiting review.`);
+  if (task) {
+    deps.onInfo?.(`Terminal event received for authoritative task ${task.task_id}; awaiting PM review.`);
   }
 }
