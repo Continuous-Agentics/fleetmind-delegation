@@ -21,6 +21,7 @@ interface PluginConfig {
   tableName: string;
   awsRegion?: string;
   reviewerAgentIds: string[];
+  workerAgentIds: Record<string, string>;
 }
 
 export interface LifecycleTaskLedger {
@@ -41,6 +42,16 @@ export const HUMAN_AUTHORITY_ACTIONS = new Set<LifecycleAction>(["signoff", "mer
 
 export function isHumanAuthorityAction(action: LifecycleAction): boolean {
   return HUMAN_AUTHORITY_ACTIONS.has(action);
+}
+
+export function assertWorkerAuthorityCaller(
+  agentId: string | undefined,
+  worker: unknown,
+  workerAgentIds: Readonly<Record<string, string>>,
+): void {
+  if (!agentId || typeof worker !== "string" || workerAgentIds[agentId] !== worker) {
+    throw new Error("Only the configured OpenClaw agent for this worker may acknowledge, ship, or block a task.");
+  }
 }
 
 export function assertHumanAuthorityCaller(
@@ -66,7 +77,12 @@ function readConfig(config: Record<string, unknown>): PluginConfig {
   if (!Array.isArray(reviewerAgentIds) || reviewerAgentIds.some((id) => typeof id !== "string" || id.length === 0)) {
     throw new Error("fleetmind-delegation config.reviewerAgentIds must be an array of non-empty agent IDs when set.");
   }
-  return { tableName, awsRegion, reviewerAgentIds };
+  const workerAgentIds = config["workerAgentIds"] ?? {};
+  if (typeof workerAgentIds !== "object" || workerAgentIds === null || Array.isArray(workerAgentIds)
+    || Object.entries(workerAgentIds).some(([agentId, worker]) => agentId.length === 0 || typeof worker !== "string" || worker.length === 0)) {
+    throw new Error("fleetmind-delegation config.workerAgentIds must map non-empty agent IDs to non-empty worker IDs when set.");
+  }
+  return { tableName, awsRegion, reviewerAgentIds, workerAgentIds: workerAgentIds as Record<string, string> };
 }
 
 export async function listActiveTasks(
@@ -185,20 +201,27 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
       event: { toolName: string; params: Record<string, unknown> },
       context: { agentId?: string },
     ) => { block: true; blockReason: string } | undefined;
-    (api.registerHook as unknown as (event: "before_tool_call", handler: BeforeToolCall) => void)(
+    (api.registerHook as unknown as (event: "before_tool_call", handler: BeforeToolCall, options: { name: string }) => void)(
       "before_tool_call",
       (event, context) => {
         const action = event.toolName === "fleetmind_task_signoff" ? "signoff"
           : event.toolName === "fleetmind_task_merge" ? "merge"
           : undefined;
-        if (!action) return undefined;
         try {
-          assertHumanAuthorityCaller(action, context.agentId, getConfig().reviewerAgentIds);
+          const config = getConfig();
+          if (action) {
+            assertHumanAuthorityCaller(action, context.agentId, config.reviewerAgentIds);
+          } else if (event.toolName === "fleetmind_task_ack" || event.toolName === "fleetmind_task_ship" || event.toolName === "fleetmind_task_block") {
+            assertWorkerAuthorityCaller(context.agentId, event.params.worker, config.workerAgentIds);
+          } else {
+            return undefined;
+          }
           return undefined;
         } catch (error) {
           return { block: true, blockReason: error instanceof Error ? error.message : "Human authority required." };
         }
       },
+      { name: "fleetmind-delegation-authorize-lifecycle-tools" },
     );
 
     const registerLifecycleTool = (

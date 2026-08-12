@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   assertHumanAuthorityCaller,
+  assertWorkerAuthorityCaller,
   isHumanAuthorityAction,
   runLifecycleAction,
   type LifecycleTaskLedger,
@@ -22,6 +23,13 @@ test("lifecycle actions call the TaskLedger transition matching their tool", asy
     { action: "merge" as const, params: { taskId: "deadbeef" }, method: "mergeTask", args: ["deadbeef"] },
   ];
   for (const item of cases) { const { ledger, calls } = makeLedger(); await runLifecycleAction(ledger, item.action, item.params); assert.deepEqual(calls, [{ method: item.method, args: item.args }]); }
+});
+
+test("worker lifecycle actions permit only the mapped worker agent", () => {
+  assert.doesNotThrow(() => assertWorkerAuthorityCaller("forge-agent", "forge", { "forge-agent": "forge" }));
+  assert.throws(() => assertWorkerAuthorityCaller("other-agent", "forge", { "forge-agent": "forge" }), /Only the configured OpenClaw agent/);
+  assert.throws(() => assertWorkerAuthorityCaller("forge-agent", "other", { "forge-agent": "forge" }), /Only the configured OpenClaw agent/);
+  assert.throws(() => assertWorkerAuthorityCaller(undefined, "forge", { "forge-agent": "forge" }), /Only the configured OpenClaw agent/);
 });
 
 test("human-authority actions permit only configured reviewer agents", () => {

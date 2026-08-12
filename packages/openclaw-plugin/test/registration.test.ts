@@ -8,7 +8,7 @@ type RegisteredTool = {
 };
 type RegisteredToolOption = { optional?: boolean };
 type RegisteredToolWithOptions = RegisteredTool & { options?: RegisteredToolOption };
-type RegisteredHook = { event: string; handler: (event: { toolName: string; params: Record<string, unknown> }, context: { agentId?: string }) => unknown };
+type RegisteredHook = { event: string; options?: { name?: string }; handler: (event: { toolName: string; params: Record<string, unknown> }, context: { agentId?: string }) => unknown };
 
 function registerPlugin(config: Record<string, unknown> = {}): { tools: RegisteredToolWithOptions[]; hooks: RegisteredHook[] } {
   const tools: RegisteredToolWithOptions[] = [];
@@ -16,7 +16,7 @@ function registerPlugin(config: Record<string, unknown> = {}): { tools: Register
   plugin.register({
     pluginConfig: config,
     registerTool: (tool: RegisteredTool, options?: RegisteredToolOption) => { tools.push({ ...tool, options }); },
-    registerHook: (event: string, handler: RegisteredHook["handler"]) => { hooks.push({ event, handler }); },
+    registerHook: (event: string, handler: RegisteredHook["handler"], options?: { name?: string }) => { hooks.push({ event, handler, options }); },
   } as never);
   return { tools, hooks };
 }
@@ -62,11 +62,16 @@ test("human-authority lifecycle tools are optional and hidden unless explicitly 
 });
 
 test("human-authority tool calls are blocked unless the caller is a configured reviewer", () => {
-  const { hooks } = registerPlugin({ tableName: "tasks", reviewerAgentIds: ["reviewer"] });
+  const { hooks } = registerPlugin({ tableName: "tasks", reviewerAgentIds: ["reviewer"], workerAgentIds: { worker: "forge" } });
   assert.equal(hooks.length, 1);
   const hook = hooks[0];
   assert.equal(hook?.event, "before_tool_call");
-  assert.equal(hook?.handler({ toolName: "fleetmind_task_ship", params: {} }, { agentId: "worker" }), undefined);
+  assert.equal(hook?.options?.name, "fleetmind-delegation-authorize-lifecycle-tools");
+  assert.equal(hook?.handler({ toolName: "fleetmind_task_ship", params: { worker: "forge" } }, { agentId: "worker" }), undefined);
+  assert.deepEqual(hook?.handler({ toolName: "fleetmind_task_ship", params: { worker: "forge" } }, { agentId: "impostor" }), {
+    block: true,
+    blockReason: "Only the configured OpenClaw agent for this worker may acknowledge, ship, or block a task.",
+  });
   assert.equal(hook?.handler({ toolName: "fleetmind_task_merge", params: {} }, { agentId: "reviewer" }), undefined);
   assert.deepEqual(hook?.handler({ toolName: "fleetmind_task_signoff", params: {} }, { agentId: "worker" }), {
     block: true,

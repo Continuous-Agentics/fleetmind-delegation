@@ -26,6 +26,14 @@
           "minLength": 1
         },
         "description": "OpenClaw agent IDs authorized to use human sign-off and merge tools."
+      },
+      "workerAgentIds": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": "Map each OpenClaw worker agent ID to its FleetMind worker ID for lifecycle authorization."
       }
     }
   },
