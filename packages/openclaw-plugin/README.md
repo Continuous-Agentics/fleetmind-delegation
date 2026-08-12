@@ -59,7 +59,7 @@ Configure that manifest ID in OpenClaw, replacing the placeholders with the task
 
 ### Optional NATS and Slack delivery
 
-`terminalEvents` enables the PM subscriber for `ship` and `block`. `delegationEvents` enables a worker subscriber for one configured OpenClaw agent. Set `workerHomeSlack` to open each delegated task in a fresh worker-home-channel thread; without it, a Slack task falls back to the authoritative planning thread. Slack receipt failure never prevents the agent wake or lifecycle acknowledgement.
+`terminalEvents` enables the PM subscriber for `ship` and `block`. `delegationEvents` enables a worker subscriber for one configured OpenClaw agent. Set `workerHomeSlack` to open each delegated task in a fresh worker-home-channel thread; without it, a Slack task falls back to the authoritative planning thread. The worker service atomically acknowledges (claims) the delegated task before posting a receipt or waking the agent, so duplicate NATS deliveries do not start duplicate worker runs. Slack receipt failure never prevents the claimed task's worker wake; a wake failure leaves the claimed task for operational reconciliation.
 
 ```json5
 {

@@ -35,6 +35,41 @@ test("worker Slack receipt opens a home-channel thread and wakes that exact sess
   assert.deepEqual(acks, [["deadbeef", "forge", "delegation"]]);
 });
 
+test("claims the task before any receipt or worker wake", async () => {
+  const order: string[] = [];
+  await handleDelegationTaskEvent(event(), {
+    ledger: {
+      getTask: async () => task({ delivery_context: { provider: "slack", accountId: "A", conversationId: "C", threadId: "1.2" } }),
+      ackTask: async () => { order.push("ack"); },
+    },
+    workerAgentId: "forge-agent", workerId: "forge",
+    slackSender: { sendText: async () => { order.push("receipt"); return {}; } },
+    wakeWorker: async () => { order.push("wake"); },
+  });
+  assert.deepEqual(order, ["ack", "receipt", "wake"]);
+});
+
+test("duplicate delivery is claimed once and never starts a second worker run", async () => {
+  let claimed = false;
+  let wakes = 0;
+  let receipts = 0;
+  const ledger = {
+    getTask: async () => task({ delivery_context: { provider: "slack", accountId: "A", conversationId: "C", threadId: "1.2" } }),
+    ackTask: async () => {
+      if (claimed) throw new Error("conditional check failed");
+      claimed = true;
+    },
+  };
+  const deps = {
+    ledger, workerAgentId: "forge-agent", workerId: "forge",
+    slackSender: { sendText: async () => { receipts += 1; return {}; } },
+    wakeWorker: async () => { wakes += 1; },
+  };
+  await Promise.all([handleDelegationTaskEvent(event(), deps), handleDelegationTaskEvent(event(), deps)]);
+  assert.equal(receipts, 1);
+  assert.equal(wakes, 1);
+});
+
 test("home-channel Slack failure falls back to the authoritative planning thread and still wakes", async () => {
   const sends: unknown[] = [];
   const wakes: unknown[][] = [];

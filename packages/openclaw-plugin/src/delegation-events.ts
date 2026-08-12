@@ -100,6 +100,17 @@ export async function handleDelegationTaskEvent(
     return;
   }
 
+  // Claim delivery before doing any side effect. ackTask is a conditional
+  // delegated→accepted transition, so duplicate NATS deliveries cannot start
+  // a second worker run after the first subscriber has claimed the task.
+  try {
+    await deps.ledger.ackTask(task.task_id, deps.workerId, task.project);
+  } catch (error) {
+    deps.onInfo?.(`Ignoring duplicate or no-longer-delegated delivery for task ${task.task_id}.`);
+    deps.onError?.(`Could not claim delegation delivery for task ${task.task_id}; not waking worker.`, error);
+    return;
+  }
+
   const originalThread = slackThreadTarget(task.delivery_context, task.delegation_thread);
   const receipt = workerDelegationReceipt(task.task_id, task.delegated_by, task.delegation_thread || undefined);
   let wakeTarget: DelegationWakeTarget | undefined;
@@ -143,14 +154,9 @@ export async function handleDelegationTaskEvent(
       wakeTarget,
     );
   } catch (error) {
-    deps.onError?.(`Could not wake worker for task ${task.task_id}.`, error);
+    deps.onError?.(`Delegation ${task.task_id} was claimed but the worker wake failed; reconcile the accepted task before retrying.`, error);
     return;
   }
 
-  try {
-    await deps.ledger.ackTask(task.task_id, deps.workerId, task.project);
-    deps.onInfo?.(`Delegation delivered and acknowledged for task ${task.task_id}.`);
-  } catch (error) {
-    deps.onError?.(`Worker wake succeeded but acknowledgement failed for task ${task.task_id}.`, error);
-  }
+  deps.onInfo?.(`Delegation claimed and delivered for task ${task.task_id}.`);
 }
