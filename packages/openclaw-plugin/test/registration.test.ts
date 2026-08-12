@@ -9,21 +9,34 @@ type RegisteredTool = {
 type RegisteredToolOption = { optional?: boolean };
 type RegisteredToolWithOptions = RegisteredTool & { options?: RegisteredToolOption };
 type RegisteredHook = { event: string; options?: { name?: string }; handler: (event: { toolName: string; params: Record<string, unknown> }, context: { agentId?: string }) => unknown };
+type RegisteredService = { id: string; start: (ctx: { config: unknown; logger: { error: (message: string) => void; warn: (message: string) => void; info: (message: string) => void } }) => Promise<void>; stop: () => Promise<void> };
 
-function registerPlugin(config: Record<string, unknown> = {}): { tools: RegisteredToolWithOptions[]; hooks: RegisteredHook[] } {
+function registerPlugin(config: Record<string, unknown> = {}): { tools: RegisteredToolWithOptions[]; hooks: RegisteredHook[]; services: RegisteredService[] } {
   const tools: RegisteredToolWithOptions[] = [];
   const hooks: RegisteredHook[] = [];
+  const services: RegisteredService[] = [];
   plugin.register({
     pluginConfig: config,
     registerTool: (tool: RegisteredTool, options?: RegisteredToolOption) => { tools.push({ ...tool, options }); },
     registerHook: (event: string, handler: RegisteredHook["handler"], options?: { name?: string }) => { hooks.push({ event, handler, options }); },
+    registerService: (service: RegisteredService) => { services.push(service); },
   } as never);
-  return { tools, hooks };
+  return { tools, hooks, services };
 }
 
 function registerTools(): RegisteredToolWithOptions[] {
   return registerPlugin().tools;
 }
+
+test("terminal-event service stays dormant without terminal-event opt-in", async () => {
+  const { services } = registerPlugin();
+  const service = services.find(({ id }) => id === "fleetmind-delegation-terminal-events");
+  assert.ok(service);
+  await assert.doesNotReject(service.start({
+    config: {}, logger: { error: () => {}, warn: () => {}, info: () => {} },
+  }));
+  await assert.doesNotReject(service.stop());
+});
 
 test("plugin registers read tools and the declared lifecycle task tools without configured infrastructure", () => {
   const tools = registerTools();
