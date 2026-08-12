@@ -10,15 +10,17 @@ type RegisteredToolOption = { optional?: boolean };
 type RegisteredToolWithOptions = RegisteredTool & { options?: RegisteredToolOption };
 type RegisteredHook = { event: string; options?: { name?: string }; handler: (event: { toolName: string; params: Record<string, unknown> }, context: { agentId?: string }) => unknown };
 
-function registerPlugin(config: Record<string, unknown> = {}): { tools: RegisteredToolWithOptions[]; hooks: RegisteredHook[] } {
+function registerPlugin(config: Record<string, unknown> = {}): { tools: RegisteredToolWithOptions[]; hooks: RegisteredHook[]; services: Array<{ id: string }> } {
   const tools: RegisteredToolWithOptions[] = [];
   const hooks: RegisteredHook[] = [];
+  const services: Array<{ id: string }> = [];
   plugin.register({
     pluginConfig: config,
     registerTool: (tool: RegisteredTool, options?: RegisteredToolOption) => { tools.push({ ...tool, options }); },
     registerHook: (event: string, handler: RegisteredHook["handler"], options?: { name?: string }) => { hooks.push({ event, handler, options }); },
+    registerService: (service: { id: string }) => { services.push(service); },
   } as never);
-  return { tools, hooks };
+  return { tools, hooks, services };
 }
 
 function registerTools(): RegisteredToolWithOptions[] {

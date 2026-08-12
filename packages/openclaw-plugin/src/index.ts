@@ -1,8 +1,13 @@
+import { randomUUID } from "node:crypto";
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { Type } from "typebox";
-import type { TaskRecord, TaskStatus } from "@continuous-agentics/delegation-core";
+import type { DeliveryContext, TaskRecord, TaskStatus } from "@continuous-agentics/delegation-core";
+import { handleTerminalTaskEvent } from "./terminal-events.js";
+export { handleTerminalTaskEvent } from "./terminal-events.js";
+export type { TerminalEventDependencies, TerminalEventLedger, TerminalTaskEvent } from "./terminal-events.js";
 import {
   DynamoDbTaskReader,
+  NatsTaskEvents,
   TaskLedger,
   type TaskReader,
   type TaskSummary,
@@ -22,6 +27,7 @@ interface PluginConfig {
   awsRegion?: string;
   reviewerAgentIds: string[];
   workerAgentIds: Record<string, string>;
+  terminalEvents?: { natsServers: string[]; subjectPrefix: string; pmAgentId: string };
 }
 
 export interface LifecycleTaskLedger {
@@ -82,7 +88,33 @@ function readConfig(config: Record<string, unknown>): PluginConfig {
     || Object.entries(workerAgentIds).some(([agentId, worker]) => agentId.length === 0 || typeof worker !== "string" || worker.length === 0)) {
     throw new Error("fleetmind-delegation config.workerAgentIds must map non-empty agent IDs to non-empty worker IDs when set.");
   }
-  return { tableName, awsRegion, reviewerAgentIds, workerAgentIds: workerAgentIds as Record<string, string> };
+  const terminalEvents = config["terminalEvents"];
+  if (terminalEvents !== undefined && (typeof terminalEvents !== "object" || terminalEvents === null || Array.isArray(terminalEvents))) {
+    throw new Error("fleetmind-delegation config.terminalEvents must be an object when set.");
+  }
+  const terminal = terminalEvents as Record<string, unknown> | undefined;
+  const natsServers = terminal?.["natsServers"];
+  const subjectPrefix = terminal?.["subjectPrefix"];
+  const pmAgentId = terminal?.["pmAgentId"];
+  if (terminal && (!Array.isArray(natsServers) || natsServers.length === 0 || natsServers.some((server) => typeof server !== "string" || server.length === 0)
+    || typeof subjectPrefix !== "string" || subjectPrefix.length === 0 || typeof pmAgentId !== "string" || pmAgentId.length === 0)) {
+    throw new Error("fleetmind-delegation config.terminalEvents requires non-empty natsServers, subjectPrefix, and pmAgentId.");
+  }
+  return {
+    tableName, awsRegion, reviewerAgentIds, workerAgentIds: workerAgentIds as Record<string, string>,
+    terminalEvents: terminal ? { natsServers: natsServers as string[], subjectPrefix: subjectPrefix as string, pmAgentId: pmAgentId as string } : undefined,
+  };
+}
+
+export function sessionKeyForDelivery(agentId: string, delivery?: DeliveryContext, legacyThreadUrl?: string): string | undefined {
+  if (delivery) {
+    if (delivery.provider !== "slack" || !delivery.threadId) return undefined;
+    return `agent:${agentId}:slack:channel:${delivery.conversationId.toLowerCase()}:thread:${delivery.threadId}`;
+  }
+  const match = legacyThreadUrl?.match(/\/archives\/([A-Z0-9]+)\/p(\d{7,})/);
+  if (!match) return undefined;
+  const timestamp = match[2]!;
+  return `agent:${agentId}:slack:channel:${match[1]!.toLowerCase()}:thread:${timestamp.slice(0, -6)}.${timestamp.slice(-6)}`;
 }
 
 export async function listActiveTasks(
@@ -163,6 +195,40 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
       })();
       return ledger;
     };
+
+    let stopTerminalEvents: (() => Promise<void>) | undefined;
+    api.registerService({
+      id: "fleetmind-delegation-terminal-events",
+      async start(ctx) {
+        const config = getConfig().terminalEvents;
+        if (!config) return;
+        const transport = new NatsTaskEvents({ servers: config.natsServers, subjectPrefix: config.subjectPrefix, onError: (error) => ctx.logger.error(`FleetMind terminal NATS error: ${String(error)}`) });
+        stopTerminalEvents = await transport.subscribeForPm(async (event) => {
+          if (event.event !== "ship" && event.event !== "block") return;
+          await handleTerminalTaskEvent(event as typeof event & { event: "ship" | "block" }, {
+            ledger: getLedger(),
+            pmAgentId: config.pmAgentId,
+            wakePm: (agentId, prompt, delivery, legacyThreadUrl) => {
+              const sessionKey = sessionKeyForDelivery(agentId, delivery, legacyThreadUrl);
+              void api.runtime.agent.runEmbeddedAgent({
+                sessionId: sessionKey ?? `fleetmind-delegation:${randomUUID()}`,
+                sessionKey,
+                runId: randomUUID(),
+                agentId,
+                workspaceDir: api.runtime.agent.resolveAgentWorkspaceDir(ctx.config, agentId),
+                config: ctx.config,
+                prompt,
+                timeoutMs: api.runtime.agent.resolveAgentTimeoutMs({ cfg: ctx.config }),
+                trigger: "manual",
+              }).catch((error) => ctx.logger.error(`FleetMind terminal PM wake failed: ${String(error)}`));
+            },
+            onError: (message, error) => ctx.logger.error(`${message} ${String(error)}`),
+            onInfo: (message) => ctx.logger.info(message),
+          });
+        });
+      },
+      async stop() { await stopTerminalEvents?.(); stopTerminalEvents = undefined; },
+    });
 
     api.registerTool({
       name: "fleetmind_task_get",
