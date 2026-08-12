@@ -21,7 +21,7 @@ Lifecycle transitions use `TaskLedger` conditional writes, so the task state mac
 
 `fleetmind_task_signoff` and `fleetmind_task_merge` are human-authority transitions. They are optional tools in the manifest and fail closed in a `before_tool_call` hook unless the calling OpenClaw agent ID appears in configured `reviewerAgentIds`.
 
-Terminal and worker-event NATS services are opt-in. When configured, they preserve authoritative task-ledger routing, post best-effort Slack receipts, and wake the matching OpenClaw thread session. Discord delivery remains out of scope. The plugin does not create tasks or publish/release packages.
+Terminal and worker-event NATS services are opt-in. When configured, they require an authoritative task-ledger record before routing or waking an agent, post best-effort Slack receipts, and wake the matching OpenClaw thread session. Discord delivery remains out of scope. The plugin does not create tasks or publish/release packages.
 
 ## Install from this repository
 

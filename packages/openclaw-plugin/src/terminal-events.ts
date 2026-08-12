@@ -18,8 +18,8 @@ export interface TerminalEventDependencies {
 /**
  * Handle a terminal worker event without owning the human review decision.
  * The DDB task record is authoritative for delivery routing and worker identity.
- * A missing or unreadable record may wake the PM only through its neutral session.
- * NATS free text is never included in the PM prompt.
+ * Missing or unreadable records are rejected: only a validated DDB task may
+ * wake the PM. NATS free text is never included in the PM prompt.
  */
 export async function handleTerminalTaskEvent(
   event: TerminalTaskEvent,
@@ -29,23 +29,26 @@ export async function handleTerminalTaskEvent(
   try {
     task = await deps.ledger.getTask(event.task_id);
   } catch (error) {
-    deps.onError?.(`Could not read task ${event.task_id}; waking the PM without ledger routing.`, error);
+    deps.onError?.(`Could not read task ${event.task_id}; refusing unverified terminal event.`, error);
+    return;
   }
-  if (task && task.worker !== event.worker) {
+  if (!task) {
+    deps.onError?.(`Ignoring terminal event for missing task ${event.task_id}.`, new Error("Missing task."));
+    return;
+  }
+  if (task.worker !== event.worker) {
     deps.onError?.(`Ignoring terminal event for task ${event.task_id}: worker does not match the ledger record.`, new Error("Worker mismatch."));
     return;
   }
 
-  const message = task
-    ? `FleetMind terminal event received for task ${task.task_id}. Review the authoritative task ledger before taking any action.`
-    : `FleetMind received an unverified terminal event for task ${event.task_id}. Inspect the task ledger before taking any action.`;
+  const message = `FleetMind terminal event received for task ${task.task_id}. Review the authoritative task ledger before taking any action.`;
 
   try {
     await deps.wakePm(
       deps.pmAgentId,
       message,
-      task?.delivery_context,
-      task?.delegation_thread || undefined,
+      task.delivery_context,
+      task.delegation_thread || undefined,
     );
   } catch (error) {
     deps.onError?.(`Could not wake PM for task ${event.task_id}.`, error);
@@ -54,7 +57,5 @@ export async function handleTerminalTaskEvent(
 
   // Workers have already performed the conditional DDB transition. A shipped
   // task requiring sign-off must remain there for an authorized human action.
-  if (task) {
-    deps.onInfo?.(`Terminal event received for authoritative task ${task.task_id}; awaiting PM review.`);
-  }
+  deps.onInfo?.(`Terminal event received for authoritative task ${task.task_id}; awaiting PM review.`);
 }

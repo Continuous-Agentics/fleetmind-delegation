@@ -23,7 +23,7 @@ test("terminal ship wakes the PM with DDB-authoritative delivery and preserves h
   assert.deepEqual(wakes, [["conductor", "FleetMind terminal event received for task deadbeef. Review the authoritative task ledger before taking any action.", { provider: "slack", accountId: "main", conversationId: "C123", threadId: "123.456" }, undefined]]);
 });
 
-test("terminal block wakes the PM neutrally when the ledger read fails", async () => {
+test("terminal handling rejects an unreadable task without waking the PM", async () => {
   const wakes: unknown[][] = [];
   const errors: string[] = [];
   await handleTerminalTaskEvent({ v: "1.0", event: "block", task_id: "deadbeef", worker: "forge", at: "2026-08-11T00:00:00Z", reason: "waiting", delegation_thread: "https://x.slack.com/archives/C123/p123456789012", delivery_context: { provider: "discord", accountId: "main", conversationId: "untrusted" } }, {
@@ -33,7 +33,16 @@ test("terminal block wakes the PM neutrally when the ledger read fails", async (
     onError: (message) => { errors.push(message); },
   });
   assert.equal(errors.length, 1);
-  assert.deepEqual(wakes, [["conductor", "FleetMind received an unverified terminal event for task deadbeef. Inspect the task ledger before taking any action.", undefined, undefined]]);
+  assert.match(errors[0]!, /refusing unverified terminal event/);
+  assert.deepEqual(wakes, []);
+});
+
+test("terminal handling rejects a missing task without waking the PM", async () => {
+  const wakes: unknown[][] = [];
+  await handleTerminalTaskEvent({ v: "1.0", event: "ship", task_id: "deadbeef", worker: "forge", at: "2026-08-11T00:00:00Z" }, {
+    ledger: ledger(async () => undefined), pmAgentId: "conductor", wakePm: (...args) => { wakes.push(args); },
+  });
+  assert.deepEqual(wakes, []);
 });
 
 test("terminal handling never includes NATS free text in the PM prompt", async () => {
