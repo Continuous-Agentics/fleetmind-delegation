@@ -17,8 +17,8 @@ export interface TerminalEventDependencies {
 
 /**
  * Handle a terminal worker event without owning the human review decision.
- * The DDB task record is authoritative for delivery routing. Peer-supplied
- * delivery fields are retained only to support legacy records and read errors.
+ * The DDB task record is authoritative for delivery routing and worker identity.
+ * A missing or unreadable record may wake the PM only through its neutral session.
  */
 export async function handleTerminalTaskEvent(
   event: TerminalTaskEvent,
@@ -30,6 +30,10 @@ export async function handleTerminalTaskEvent(
   } catch (error) {
     deps.onError?.(`Could not read task ${event.task_id}; waking the PM without ledger routing.`, error);
   }
+  if (task && task.worker !== event.worker) {
+    deps.onError?.(`Ignoring terminal event for task ${event.task_id}: worker does not match the ledger record.`, new Error("Worker mismatch."));
+    return;
+  }
 
   const message = event.event === "ship"
     ? `NATS: Task ${event.task_id} shipped by ${event.worker}.${event.message ? ` ${event.message}` : ""}`
@@ -39,8 +43,8 @@ export async function handleTerminalTaskEvent(
     await deps.wakePm(
       deps.pmAgentId,
       message,
-      task?.delivery_context ?? (task?.delegation_thread ? undefined : event.delivery_context),
-      task?.delegation_thread || event.delegation_thread,
+      task?.delivery_context,
+      task?.delegation_thread || undefined,
     );
   } catch (error) {
     deps.onError?.(`Could not wake PM for task ${event.task_id}.`, error);
