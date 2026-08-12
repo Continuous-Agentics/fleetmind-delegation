@@ -212,8 +212,10 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
     api.registerService({
       id: "fleetmind-delegation-terminal-events",
       async start(ctx) {
-        const config = getConfig().terminalEvents;
-        if (!config) return;
+        // Keep the opt-in service dormant even when the lifecycle-tool config
+        // is intentionally absent.
+        if ((api.pluginConfig ?? {})["terminalEvents"] === undefined) return;
+        const config = getConfig().terminalEvents!;
         const transport = new NatsTaskEvents({ servers: config.natsServers, subjectPrefix: config.subjectPrefix, onError: (error) => ctx.logger.error(`FleetMind terminal NATS error: ${String(error)}`) });
         stopTerminalEvents = await transport.subscribeForPm(async (event) => {
           if (event.event !== "ship" && event.event !== "block") return;
