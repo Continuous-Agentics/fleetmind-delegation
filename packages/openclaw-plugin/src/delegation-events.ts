@@ -17,7 +17,12 @@ export interface DelegationEventLedger {
 }
 
 export interface DelegationWakeTarget {
-  delivery?: DeliveryContext;
+  delivery?: {
+    provider: string;
+    accountId?: string;
+    conversationId: string;
+    threadId?: string;
+  };
   sessionKey?: string;
 }
 
@@ -33,6 +38,9 @@ export interface DelegationEventDependencies {
 }
 
 function slackDelivery(target: SlackThreadTarget): DeliveryContext {
+  if (!target.accountId) {
+    throw new Error("Structured Slack delivery requires an account ID.");
+  }
   return {
     provider: "slack",
     accountId: target.accountId,
@@ -52,6 +60,17 @@ function deliveryWakeTarget(agentId: string, delivery?: DeliveryContext): Delega
     })
     : `agent:${agentId}:${delivery.provider}:channel:${delivery.conversationId}`;
   return { delivery, sessionKey };
+}
+
+function legacySlackWakeTarget(agentId: string, target: SlackThreadTarget): DelegationWakeTarget {
+  return {
+    delivery: {
+      provider: "slack",
+      conversationId: target.conversationId,
+      threadId: target.threadId,
+    },
+    sessionKey: sessionKeyForSlackThread(agentId, target),
+  };
 }
 
 /**
@@ -111,7 +130,9 @@ export async function handleDelegationTaskEvent(
       await sendBestEffortSlackThreadReceipt(deps.slackSender, originalThread, receipt,
         (error) => deps.onError?.(`Could not post delegation-thread receipt for task ${task.task_id}.`, error));
     }
-    wakeTarget = { delivery: slackDelivery(originalThread), sessionKey: sessionKeyForSlackThread(deps.workerAgentId, originalThread) };
+    wakeTarget = originalThread.accountId
+      ? { delivery: slackDelivery(originalThread), sessionKey: sessionKeyForSlackThread(deps.workerAgentId, originalThread) }
+      : legacySlackWakeTarget(deps.workerAgentId, originalThread);
   }
   wakeTarget ??= deliveryWakeTarget(deps.workerAgentId, task.delivery_context);
 

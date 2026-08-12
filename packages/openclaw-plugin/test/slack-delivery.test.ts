@@ -15,13 +15,15 @@ test("structured Slack delivery is authoritative over a legacy permalink", () =>
   );
   assert.deepEqual(target, { provider: "slack", accountId: "A1", conversationId: "C123", threadId: "123.456" });
   assert.equal(sessionKeyForSlackThread("forge", target!), "agent:forge:slack:channel:c123:thread:123.456");
+  assert.equal(target?.accountId, "A1");
 });
 
 test("legacy Slack permalink is used only when no structured delivery exists", () => {
   assert.deepEqual(
     slackThreadTarget(undefined, "https://example.slack.com/archives/C123/p123456789012"),
-    { provider: "slack", accountId: "legacy", conversationId: "C123", threadId: "123456.789012" },
+    { provider: "slack", conversationId: "C123", threadId: "123456.789012" },
   );
+  assert.equal(slackThreadTarget(undefined, "https://example.slack.com/archives/C123/p123456789012")?.accountId, undefined);
   assert.equal(slackThreadTarget({ provider: "discord", accountId: "A1", conversationId: "D1" }, "https://example.slack.com/archives/C123/p123456789012"), undefined);
 });
 

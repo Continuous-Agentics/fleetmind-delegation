@@ -2,7 +2,7 @@ import type { DeliveryContext } from "@continuous-agentics/delegation-core";
 
 export interface SlackThreadTarget {
   provider: "slack";
-  accountId: string;
+  accountId?: string;
   conversationId: string;
   threadId: string;
 }
@@ -17,7 +17,7 @@ export interface SlackMessageSender {
     conversationId: string;
     text: string;
     threadId?: string;
-    accountId: string;
+    accountId?: string;
   }): Promise<{ messageId?: string }>;
 }
 
@@ -43,7 +43,6 @@ export function slackThreadTarget(
   const compact = match[2]!;
   return {
     provider: "slack",
-    accountId: "legacy",
     conversationId: match[1]!,
     threadId: `${compact.slice(0, -6)}.${compact.slice(-6)}`,
   };

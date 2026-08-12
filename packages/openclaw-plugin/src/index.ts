@@ -273,10 +273,8 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
             pmAgentId: config.pmAgentId,
             wakePm: async (agentId, prompt, delivery, legacyThreadUrl) => {
               const target = deliveryTargetForPm(agentId, delivery, legacyThreadUrl);
-              if (target) {
-                const receipt = event.event === "ship"
-                  ? `✓ Received ship for \`${event.task_id}\` from ${event.worker} — reviewing`
-                  : `⚠️ Received block for \`${event.task_id}\` from ${event.worker} — reviewing`;
+              if (target?.channel === "slack") {
+                const receipt = pmTerminalReceipt(event.event as "ship" | "block", event.task_id, event.worker);
                 try {
                   const adapter = await api.runtime.channel.outbound.loadAdapter(target.channel as never);
                   const sendText = adapter?.sendText;
