@@ -3,8 +3,25 @@ import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { Type } from "typebox";
 import type { DeliveryContext, TaskRecord, TaskStatus } from "@continuous-agentics/delegation-core";
 import { handleTerminalTaskEvent } from "./terminal-events.js";
+import { handleDelegationTaskEvent } from "./delegation-events.js";
+import {
+  pmTerminalReceipt,
+  sendBestEffortSlackThreadReceipt,
+  sessionKeyForSlackThread,
+  slackThreadTarget,
+  workerDelegationReceipt,
+} from "./slack-delivery.js";
 export { handleTerminalTaskEvent } from "./terminal-events.js";
 export type { TerminalEventDependencies, TerminalEventLedger, TerminalTaskEvent } from "./terminal-events.js";
+export { handleDelegationTaskEvent } from "./delegation-events.js";
+export type { DelegationEventDependencies, DelegationEventLedger, DelegationTaskEvent } from "./delegation-events.js";
+export {
+  pmTerminalReceipt,
+  sendBestEffortSlackThreadReceipt,
+  sessionKeyForSlackThread,
+  slackThreadTarget,
+  workerDelegationReceipt,
+} from "./slack-delivery.js";
 import {
   DynamoDbTaskReader,
   NatsTaskEvents,
@@ -28,6 +45,12 @@ interface PluginConfig {
   reviewerAgentIds: string[];
   workerAgentIds: Record<string, string>;
   terminalEvents?: { natsServers: string[]; subjectPrefix: string; pmAgentId: string };
+  delegationEvents?: {
+    natsServers: string[];
+    subjectPrefix: string;
+    agentId: string;
+    workerHomeSlack?: { accountId: string; conversationId: string };
+  };
 }
 
 export interface LifecycleTaskLedger {
@@ -100,9 +123,29 @@ function readConfig(config: Record<string, unknown>): PluginConfig {
     || typeof subjectPrefix !== "string" || subjectPrefix.length === 0 || typeof pmAgentId !== "string" || pmAgentId.length === 0)) {
     throw new Error("fleetmind-delegation config.terminalEvents requires non-empty natsServers, subjectPrefix, and pmAgentId.");
   }
+  const delegationEvents = config["delegationEvents"];
+  if (delegationEvents !== undefined && (typeof delegationEvents !== "object" || delegationEvents === null || Array.isArray(delegationEvents))) {
+    throw new Error("fleetmind-delegation config.delegationEvents must be an object when set.");
+  }
+  const delegation = delegationEvents as Record<string, unknown> | undefined;
+  const delegationNatsServers = delegation?.["natsServers"];
+  const delegationSubjectPrefix = delegation?.["subjectPrefix"];
+  const delegationAgentId = delegation?.["agentId"];
+  const workerHomeSlack = delegation?.["workerHomeSlack"];
+  if (delegation && (!Array.isArray(delegationNatsServers) || delegationNatsServers.length === 0 || delegationNatsServers.some((server) => typeof server !== "string" || server.length === 0)
+    || typeof delegationSubjectPrefix !== "string" || delegationSubjectPrefix.length === 0 || typeof delegationAgentId !== "string" || delegationAgentId.length === 0
+    || (workerHomeSlack !== undefined && (typeof workerHomeSlack !== "object" || workerHomeSlack === null || Array.isArray(workerHomeSlack)
+      || typeof (workerHomeSlack as Record<string, unknown>)["accountId"] !== "string" || !(workerHomeSlack as Record<string, unknown>)["accountId"]
+      || typeof (workerHomeSlack as Record<string, unknown>)["conversationId"] !== "string" || !(workerHomeSlack as Record<string, unknown>)["conversationId"])))) {
+    throw new Error("fleetmind-delegation config.delegationEvents requires non-empty natsServers, subjectPrefix, agentId, and (when set) workerHomeSlack accountId/conversationId.");
+  }
   return {
     tableName, awsRegion, reviewerAgentIds, workerAgentIds: workerAgentIds as Record<string, string>,
     terminalEvents: terminal ? { natsServers: natsServers as string[], subjectPrefix: subjectPrefix as string, pmAgentId: pmAgentId as string } : undefined,
+    delegationEvents: delegation ? {
+      natsServers: delegationNatsServers as string[], subjectPrefix: delegationSubjectPrefix as string, agentId: delegationAgentId as string,
+      workerHomeSlack: workerHomeSlack as { accountId: string; conversationId: string } | undefined,
+    } : undefined,
   };
 }
 
@@ -292,6 +335,85 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
         await stopTerminalEvents?.();
         stopTerminalEvents = undefined;
         await Promise.allSettled([...terminalHandlers]);
+      },
+    });
+
+    let stopDelegationEvents: (() => Promise<void>) | undefined;
+    let delegationEventGeneration = 0;
+    let delegationHandlers = new Set<Promise<void>>();
+    api.registerService({
+      id: "fleetmind-delegation-worker-events",
+      async start(ctx) {
+        if ((api.pluginConfig ?? {})["delegationEvents"] === undefined) return;
+        await stopDelegationEvents?.();
+        stopDelegationEvents = undefined;
+        await Promise.allSettled([...delegationHandlers]);
+        const generation = ++delegationEventGeneration;
+        const pluginConfig = getConfig();
+        const config = pluginConfig.delegationEvents!;
+        const workerId = pluginConfig.workerAgentIds[config.agentId];
+        if (!workerId) {
+          throw new Error(`fleetmind-delegation config.workerAgentIds must map delegationEvents.agentId ${config.agentId} to its FleetMind worker ID.`);
+        }
+        const transport = new NatsTaskEvents({
+          servers: config.natsServers,
+          subjectPrefix: config.subjectPrefix,
+          onError: (error) => ctx.logger.error(`FleetMind delegation NATS error: ${String(error)}`),
+        });
+        const dispose = await transport.subscribeForWorker(workerId, (event) => {
+          if (event.event !== "delegation" || generation !== delegationEventGeneration) return;
+          const handler = handleDelegationTaskEvent(event as typeof event & { event: "delegation" }, {
+            ledger: getLedger(),
+            workerAgentId: config.agentId,
+            workerId,
+            workerHomeSlack: config.workerHomeSlack,
+            slackSender: {
+              sendText: async ({ conversationId, text, threadId, accountId }) => {
+                const adapter = await api.runtime.channel.outbound.loadAdapter("slack" as never);
+                const sendText = adapter?.sendText;
+                if (!sendText) throw new Error("No Slack outbound adapter is available.");
+                const result = await sendText({ cfg: ctx.config, to: conversationId, text, threadId, accountId });
+                return { messageId: result.messageId };
+              },
+            },
+            wakeWorker: async (agentId, prompt, target) => {
+              await api.runtime.agent.runEmbeddedAgent({
+                sessionId: target?.sessionKey ?? `agent:${agentId}:main`,
+                sessionKey: target?.sessionKey ?? `agent:${agentId}:main`,
+                runId: randomUUID(),
+                agentId,
+                workspaceDir: api.runtime.agent.resolveAgentWorkspaceDir(ctx.config, agentId),
+                config: ctx.config,
+                prompt,
+                messageChannel: target?.delivery?.provider,
+                messageProvider: target?.delivery?.provider,
+                messageTo: target?.delivery?.conversationId,
+                messageThreadId: target?.delivery?.threadId,
+                currentChannelId: target?.delivery?.conversationId,
+                currentThreadTs: target?.delivery?.threadId,
+                agentAccountId: target?.delivery?.accountId,
+                timeoutMs: api.runtime.agent.resolveAgentTimeoutMs({ cfg: ctx.config }),
+                trigger: "manual",
+              });
+            },
+            onError: (message, error) => ctx.logger.warn(`${message} ${String(error)}`),
+            onInfo: (message) => ctx.logger.info(message),
+          });
+          delegationHandlers.add(handler);
+          void handler.then(() => delegationHandlers.delete(handler), () => delegationHandlers.delete(handler));
+          return handler;
+        });
+        if (generation !== delegationEventGeneration) {
+          await dispose();
+          return;
+        }
+        stopDelegationEvents = dispose;
+      },
+      async stop() {
+        delegationEventGeneration += 1;
+        await stopDelegationEvents?.();
+        stopDelegationEvents = undefined;
+        await Promise.allSettled([...delegationHandlers]);
       },
     });
 

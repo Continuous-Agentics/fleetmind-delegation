@@ -49,6 +49,30 @@
         },
         "required": ["natsServers", "subjectPrefix", "pmAgentId"],
         "description": "Enable the plugin-owned PM subscriber for terminal NATS ship and block events."
+      },
+      "delegationEvents": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "natsServers": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "subjectPrefix": { "type": "string", "minLength": 1 },
+          "agentId": { "type": "string", "minLength": 1 },
+          "workerHomeSlack": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "accountId": { "type": "string", "minLength": 1 },
+              "conversationId": { "type": "string", "minLength": 1 }
+            },
+            "required": ["accountId", "conversationId"]
+          }
+        },
+        "required": ["natsServers", "subjectPrefix", "agentId"],
+        "description": "Enable plugin-owned worker delegation delivery. workerHomeSlack opens a per-task receipt thread when configured."
       }
     }
   },
