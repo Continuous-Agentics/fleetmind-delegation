@@ -2,7 +2,9 @@
   "id": "fleetmind-delegation",
   "name": "FleetMind Delegation",
   "description": "FleetMind delegation task read and lifecycle-transition tools for OpenClaw.",
-  "activation": { "onStartup": true },
+  "activation": {
+    "onStartup": true
+  },
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -16,6 +18,14 @@
         "type": "string",
         "minLength": 1,
         "description": "AWS region for the FleetMind delegation task ledger. Defaults to AWS_REGION."
+      },
+      "reviewerAgentIds": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": "OpenClaw agent IDs authorized to use human sign-off and merge tools."
       }
     }
   },
@@ -29,5 +39,13 @@
       "fleetmind_task_signoff",
       "fleetmind_task_merge"
     ]
+  },
+  "toolMetadata": {
+    "fleetmind_task_signoff": {
+      "optional": true
+    },
+    "fleetmind_task_merge": {
+      "optional": true
+    }
   }
 }

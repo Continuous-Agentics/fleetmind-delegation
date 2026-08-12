@@ -20,21 +20,37 @@ export const ACTIVE_TASK_STATUSES: TaskStatus[] = [
 interface PluginConfig {
   tableName: string;
   awsRegion?: string;
+  reviewerAgentIds: string[];
 }
 
 export interface LifecycleTaskLedger {
-  ackTask(taskId: string, worker: string, project?: string): Promise<void>;
-  shipTask(taskId: string, worker: string, project?: string): Promise<void>;
-  blockTask(taskId: string, worker: string, project?: string): Promise<void>;
-  signoffTask(taskId: string, project?: string): Promise<void>;
-  mergeTask(taskId: string, project?: string): Promise<void>;
+  ackTask(taskId: string, worker: string): Promise<void>;
+  shipTask(taskId: string, worker: string): Promise<void>;
+  blockTask(taskId: string, worker: string): Promise<void>;
+  signoffTask(taskId: string): Promise<void>;
+  mergeTask(taskId: string): Promise<void>;
 }
 
 export type LifecycleAction = "ack" | "ship" | "block" | "signoff" | "merge";
 export interface LifecycleToolParams {
   taskId: string;
   worker?: string;
-  project?: string;
+}
+
+export const HUMAN_AUTHORITY_ACTIONS = new Set<LifecycleAction>(["signoff", "merge"]);
+
+export function isHumanAuthorityAction(action: LifecycleAction): boolean {
+  return HUMAN_AUTHORITY_ACTIONS.has(action);
+}
+
+export function assertHumanAuthorityCaller(
+  action: LifecycleAction,
+  agentId: string | undefined,
+  reviewerAgentIds: readonly string[],
+): void {
+  if (isHumanAuthorityAction(action) && (!agentId || !reviewerAgentIds.includes(agentId))) {
+    throw new Error("Only a configured FleetMind reviewer agent may sign off or merge a task.");
+  }
 }
 
 function readConfig(config: Record<string, unknown>): PluginConfig {
@@ -46,7 +62,11 @@ function readConfig(config: Record<string, unknown>): PluginConfig {
   if (awsRegion !== undefined && typeof awsRegion !== "string") {
     throw new Error("fleetmind-delegation config.awsRegion must be a string when set.");
   }
-  return { tableName, awsRegion };
+  const reviewerAgentIds = config["reviewerAgentIds"] ?? [];
+  if (!Array.isArray(reviewerAgentIds) || reviewerAgentIds.some((id) => typeof id !== "string" || id.length === 0)) {
+    throw new Error("fleetmind-delegation config.reviewerAgentIds must be an array of non-empty agent IDs when set.");
+  }
+  return { tableName, awsRegion, reviewerAgentIds };
 }
 
 export async function listActiveTasks(
@@ -81,34 +101,29 @@ export async function runLifecycleAction(
 ): Promise<string> {
   switch (action) {
     case "ack":
-      await ledger.ackTask(params.taskId, params.worker!, params.project);
+      await ledger.ackTask(params.taskId, params.worker!);
       return `Acknowledged FleetMind task ${params.taskId}.`;
     case "ship":
-      await ledger.shipTask(params.taskId, params.worker!, params.project);
+      await ledger.shipTask(params.taskId, params.worker!);
       return `Shipped FleetMind task ${params.taskId}.`;
     case "block":
-      await ledger.blockTask(params.taskId, params.worker!, params.project);
+      await ledger.blockTask(params.taskId, params.worker!);
       return `Blocked FleetMind task ${params.taskId}.`;
     case "signoff":
-      await ledger.signoffTask(params.taskId, params.project);
+      await ledger.signoffTask(params.taskId);
       return `Signed off FleetMind task ${params.taskId}.`;
     case "merge":
-      await ledger.mergeTask(params.taskId, params.project);
+      await ledger.mergeTask(params.taskId);
       return `Merged FleetMind task ${params.taskId}.`;
   }
 }
 
 const taskIdParameter = Type.String({ pattern: "^[0-9a-f]{8}$" });
-const projectParameter = Type.Optional(Type.String({ minLength: 1 }));
 const workerParameters = Type.Object({
   taskId: taskIdParameter,
   worker: Type.String({ minLength: 1 }),
-  project: projectParameter,
 });
-const humanParameters = Type.Object({
-  taskId: taskIdParameter,
-  project: projectParameter,
-});
+const humanParameters = Type.Object({ taskId: taskIdParameter });
 
 const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
   id: "fleetmind-delegation",
@@ -156,7 +171,7 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
       label: "List active FleetMind tasks",
       description: "List active FleetMind tasks across delegated, accepted, shipped, signed-off, and blocked states.",
       parameters: Type.Object({
-        project: projectParameter,
+        project: Type.Optional(Type.String({ minLength: 1 })),
         limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100, default: 20 })),
       }),
       async execute(_id, rawParams) {
@@ -165,6 +180,26 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
         return { content: [{ type: "text", text: JSON.stringify(tasks, null, 2) }], details: {} };
       },
     });
+
+    type BeforeToolCall = (
+      event: { toolName: string; params: Record<string, unknown> },
+      context: { agentId?: string },
+    ) => { block: true; blockReason: string } | undefined;
+    (api.registerHook as unknown as (event: "before_tool_call", handler: BeforeToolCall) => void)(
+      "before_tool_call",
+      (event, context) => {
+        const action = event.toolName === "fleetmind_task_signoff" ? "signoff"
+          : event.toolName === "fleetmind_task_merge" ? "merge"
+          : undefined;
+        if (!action) return undefined;
+        try {
+          assertHumanAuthorityCaller(action, context.agentId, getConfig().reviewerAgentIds);
+          return undefined;
+        } catch (error) {
+          return { block: true, blockReason: error instanceof Error ? error.message : "Human authority required." };
+        }
+      },
+    );
 
     const registerLifecycleTool = (
       action: LifecycleAction,
@@ -182,7 +217,7 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
           const text = await runLifecycleAction(getLedger(), action, rawParams as LifecycleToolParams);
           return { content: [{ type: "text", text }], details: {} };
         },
-      });
+      }, isHumanAuthorityAction(action) ? { optional: true } : undefined);
     };
 
     registerLifecycleTool("ack", "fleetmind_task_ack", "Acknowledge FleetMind task", "Acknowledge a delegated task as its assigned worker.", true);

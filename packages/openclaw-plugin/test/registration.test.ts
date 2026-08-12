@@ -6,14 +6,23 @@ type RegisteredTool = {
   name: string;
   parameters: { required?: string[]; properties?: Record<string, unknown> };
 };
+type RegisteredToolOption = { optional?: boolean };
+type RegisteredToolWithOptions = RegisteredTool & { options?: RegisteredToolOption };
+type RegisteredHook = { event: string; handler: (event: { toolName: string; params: Record<string, unknown> }, context: { agentId?: string }) => unknown };
 
-function registerTools(): RegisteredTool[] {
-  const tools: RegisteredTool[] = [];
+function registerPlugin(config: Record<string, unknown> = {}): { tools: RegisteredToolWithOptions[]; hooks: RegisteredHook[] } {
+  const tools: RegisteredToolWithOptions[] = [];
+  const hooks: RegisteredHook[] = [];
   plugin.register({
-    pluginConfig: {},
-    registerTool: (tool: RegisteredTool) => { tools.push(tool); },
+    pluginConfig: config,
+    registerTool: (tool: RegisteredTool, options?: RegisteredToolOption) => { tools.push({ ...tool, options }); },
+    registerHook: (event: string, handler: RegisteredHook["handler"]) => { hooks.push({ event, handler }); },
   } as never);
-  return tools;
+  return { tools, hooks };
+}
+
+function registerTools(): RegisteredToolWithOptions[] {
+  return registerPlugin().tools;
 }
 
 test("plugin registers read tools and the declared lifecycle task tools without configured infrastructure", () => {
@@ -34,13 +43,35 @@ test("worker lifecycle tools require task ID and worker while human transitions 
   for (const name of ["fleetmind_task_ack", "fleetmind_task_ship", "fleetmind_task_block"]) {
     const parameters = tools.get(name)?.parameters;
     assert.deepEqual(parameters?.required, ["taskId", "worker"]);
-    assert.ok(parameters?.properties?.["project"]);
+    assert.equal(parameters?.properties?.["project"], undefined);
   }
   for (const name of ["fleetmind_task_signoff", "fleetmind_task_merge"]) {
     const parameters = tools.get(name)?.parameters;
     assert.deepEqual(parameters?.required, ["taskId"]);
-    assert.ok(parameters?.properties?.["project"]);
+    assert.equal(parameters?.properties?.["project"], undefined);
   }
+});
+
+test("human-authority lifecycle tools are optional and hidden unless explicitly allowlisted", () => {
+  const tools = new Map(registerTools().map((tool) => [tool.name, tool]));
+  assert.equal(tools.get("fleetmind_task_ack")?.options?.optional, undefined);
+  assert.equal(tools.get("fleetmind_task_ship")?.options?.optional, undefined);
+  assert.equal(tools.get("fleetmind_task_block")?.options?.optional, undefined);
+  assert.equal(tools.get("fleetmind_task_signoff")?.options?.optional, true);
+  assert.equal(tools.get("fleetmind_task_merge")?.options?.optional, true);
+});
+
+test("human-authority tool calls are blocked unless the caller is a configured reviewer", () => {
+  const { hooks } = registerPlugin({ tableName: "tasks", reviewerAgentIds: ["reviewer"] });
+  assert.equal(hooks.length, 1);
+  const hook = hooks[0];
+  assert.equal(hook?.event, "before_tool_call");
+  assert.equal(hook?.handler({ toolName: "fleetmind_task_ship", params: {} }, { agentId: "worker" }), undefined);
+  assert.equal(hook?.handler({ toolName: "fleetmind_task_merge", params: {} }, { agentId: "reviewer" }), undefined);
+  assert.deepEqual(hook?.handler({ toolName: "fleetmind_task_signoff", params: {} }, { agentId: "worker" }), {
+    block: true,
+    blockReason: "Only a configured FleetMind reviewer agent may sign off or merge a task.",
+  });
 });
 
 test("published plugin entry re-exports the documented ledger and transport adapters", () => {
