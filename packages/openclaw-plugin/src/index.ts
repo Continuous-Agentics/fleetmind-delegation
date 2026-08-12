@@ -106,28 +106,16 @@ function readConfig(config: Record<string, unknown>): PluginConfig {
   };
 }
 
-export interface DeliveryTarget {
-  channel: string;
-  conversationId: string;
-  threadId?: string;
-  accountId?: string;
-  sessionKey: string;
-}
-
-export function deliveryTargetForPm(agentId: string, delivery?: DeliveryContext, legacyThreadUrl?: string): DeliveryTarget | undefined {
+export function sessionKeyForDelivery(agentId: string, delivery?: DeliveryContext, legacyThreadUrl?: string): string | undefined {
   if (delivery) {
-    const sessionKey = delivery.provider === "slack" && delivery.threadId
-      ? `agent:${agentId}:slack:channel:${delivery.conversationId.toLowerCase()}:thread:${delivery.threadId}`
-      : `agent:${agentId}:${delivery.provider}:channel:${delivery.conversationId}`;
-    return { channel: delivery.provider, conversationId: delivery.conversationId, threadId: delivery.threadId, accountId: delivery.accountId, sessionKey };
+    if (delivery.provider !== "slack" || !delivery.threadId) return undefined;
+    return `agent:${agentId}:slack:channel:${delivery.conversationId.toLowerCase()}:thread:${delivery.threadId}`;
   }
   const match = legacyThreadUrl?.match(/\/archives\/([A-Z0-9]+)\/p(\d{7,})/);
   if (!match) return undefined;
   const timestamp = match[2]!;
-  const threadId = `${timestamp.slice(0, -6)}.${timestamp.slice(-6)}`;
-  return { channel: "slack", conversationId: match[1]!, threadId, sessionKey: `agent:${agentId}:slack:channel:${match[1]!.toLowerCase()}:thread:${threadId}` };
+  return `agent:${agentId}:slack:channel:${match[1]!.toLowerCase()}:thread:${timestamp.slice(0, -6)}.${timestamp.slice(-6)}`;
 }
-
 
 export async function listActiveTasks(
   reader: TaskReader,
@@ -209,90 +197,37 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
     };
 
     let stopTerminalEvents: (() => Promise<void>) | undefined;
-    let terminalEventGeneration = 0;
-    let terminalHandlers = new Set<Promise<void>>();
     api.registerService({
       id: "fleetmind-delegation-terminal-events",
       async start(ctx) {
-        // Keep the opt-in service dormant even when the lifecycle-tool config
-        // is intentionally absent.
-        if ((api.pluginConfig ?? {})["terminalEvents"] === undefined) return;
-        await stopTerminalEvents?.();
-        stopTerminalEvents = undefined;
-        await Promise.allSettled([...terminalHandlers]);
-        const generation = ++terminalEventGeneration;
-        const config = getConfig().terminalEvents!;
+        const config = getConfig().terminalEvents;
+        if (!config) return;
         const transport = new NatsTaskEvents({ servers: config.natsServers, subjectPrefix: config.subjectPrefix, onError: (error) => ctx.logger.error(`FleetMind terminal NATS error: ${String(error)}`) });
-        const dispose = await transport.subscribeForPm((event) => {
-          if (event.event !== "ship" && event.event !== "block" || generation !== terminalEventGeneration) return;
-          const handler = handleTerminalTaskEvent(event as typeof event & { event: "ship" | "block" }, {
+        stopTerminalEvents = await transport.subscribeForPm(async (event) => {
+          if (event.event !== "ship" && event.event !== "block") return;
+          await handleTerminalTaskEvent(event as typeof event & { event: "ship" | "block" }, {
             ledger: getLedger(),
             pmAgentId: config.pmAgentId,
-            wakePm: async (agentId, prompt, delivery, legacyThreadUrl) => {
-              const target = deliveryTargetForPm(agentId, delivery, legacyThreadUrl);
-              if (target) {
-                const receipt = event.event === "ship"
-                  ? `✓ Received ship for \`${event.task_id}\` from ${event.worker} — reviewing`
-                  : `⚠️ Received block for \`${event.task_id}\` from ${event.worker} — reviewing`;
-                try {
-                  const adapter = await api.runtime.channel.outbound.loadAdapter(target.channel as never);
-                  const sendText = adapter?.sendText;
-                  if (sendText) await sendText({ cfg: ctx.config, to: target.conversationId, text: receipt, threadId: target.threadId, accountId: target.accountId });
-                } catch (error) {
-                  ctx.logger.warn(`FleetMind terminal receipt failed: ${String(error)}`);
-                }
-              }
-              const result = await api.runtime.agent.runEmbeddedAgent({
-                sessionId: target?.sessionKey ?? `agent:${agentId}:main`,
-                sessionKey: target?.sessionKey ?? `agent:${agentId}:main`,
+            wakePm: (agentId, prompt, delivery, legacyThreadUrl) => {
+              const sessionKey = sessionKeyForDelivery(agentId, delivery, legacyThreadUrl);
+              void api.runtime.agent.runEmbeddedAgent({
+                sessionId: sessionKey ?? `fleetmind-delegation:${randomUUID()}`,
+                sessionKey,
                 runId: randomUUID(),
                 agentId,
                 workspaceDir: api.runtime.agent.resolveAgentWorkspaceDir(ctx.config, agentId),
                 config: ctx.config,
                 prompt,
-                messageChannel: target?.channel,
-                messageProvider: target?.channel,
-                messageTo: target?.conversationId,
-                messageThreadId: target?.threadId,
-                currentChannelId: target?.conversationId,
-                currentThreadTs: target?.threadId,
-                agentAccountId: target?.accountId,
                 timeoutMs: api.runtime.agent.resolveAgentTimeoutMs({ cfg: ctx.config }),
                 trigger: "manual",
-              });
-              if (!target || result.didDeliverSourceReplyViaMessageTool) return;
-              const adapter = await api.runtime.channel.outbound.loadAdapter(target.channel as never);
-              if (!adapter) throw new Error(`No outbound adapter for ${target.channel}.`);
-              const sendText = adapter.sendText;
-              if (!sendText) throw new Error(`Outbound adapter for ${target.channel} cannot send text.`);
-              for (const payload of result.payloads ?? []) {
-                if (!payload.isReasoning && !payload.isCommentary && payload.text?.trim()) {
-                  await sendText({ cfg: ctx.config, to: target.conversationId, text: payload.text, threadId: target.threadId, accountId: target.accountId });
-                }
-              }
+              }).catch((error) => ctx.logger.error(`FleetMind terminal PM wake failed: ${String(error)}`));
             },
             onError: (message, error) => ctx.logger.error(`${message} ${String(error)}`),
             onInfo: (message) => ctx.logger.info(message),
           });
-          terminalHandlers.add(handler);
-          void handler.then(
-            () => terminalHandlers.delete(handler),
-            () => terminalHandlers.delete(handler),
-          );
-          return handler;
         });
-        if (generation !== terminalEventGeneration) {
-          await dispose();
-          return;
-        }
-        stopTerminalEvents = dispose;
       },
-      async stop() {
-        terminalEventGeneration += 1;
-        await stopTerminalEvents?.();
-        stopTerminalEvents = undefined;
-        await Promise.allSettled([...terminalHandlers]);
-      },
+      async stop() { await stopTerminalEvents?.(); stopTerminalEvents = undefined; },
     });
 
     api.registerTool({
