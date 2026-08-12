@@ -10,7 +10,7 @@ export interface TerminalEventLedger {
 export interface TerminalEventDependencies {
   ledger: TerminalEventLedger;
   pmAgentId: string;
-  wakePm(agentId: string, message: string, delivery?: DeliveryContext, legacyThreadUrl?: string): void;
+  wakePm(agentId: string, message: string, delivery?: DeliveryContext, legacyThreadUrl?: string): Promise<void> | void;
   onError?: (message: string, error: unknown) => void;
   onInfo?: (message: string) => void;
 }
@@ -36,7 +36,7 @@ export async function handleTerminalTaskEvent(
     : `NATS: Task ${event.task_id} blocked by ${event.worker}.${event.reason ? ` ${event.reason}` : ""}`;
 
   try {
-    deps.wakePm(
+    await deps.wakePm(
       deps.pmAgentId,
       message,
       task?.delivery_context ?? event.delivery_context,
