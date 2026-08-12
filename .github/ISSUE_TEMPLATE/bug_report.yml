@@ -1,0 +1,48 @@
+name: Bug report
+description: Report a reproducible defect in a delegation package or its documentation.
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected component
+      options:
+        - "@continuous-agentics/delegation-core"
+        - "@continuous-agentics/openclaw-delegation-plugin"
+        - Documentation
+        - Repository tooling
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Package version or commit
+      placeholder: "0.1.2 or abc1234"
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: "Include Node.js version; for plugin issues, OpenClaw version and redacted plugin configuration."
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: "Redact AWS credentials, npm tokens, NATS credentials, account IDs, and task content."

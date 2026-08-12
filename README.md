@@ -2,7 +2,7 @@
 
 This repository is the source monorepo for the FleetMind delegation protocol and its OpenClaw integration. It is not itself an installable OpenClaw plugin or a published runtime package.
 
-Start with the [consumer and onboarding guide](docs/consumer-onboarding.md) to choose the right component and configure it safely.
+Start with the [consumer and onboarding guide](docs/consumer-onboarding.md) to choose the right component and configure it safely. Contributors should read [CONTRIBUTING.md](CONTRIBUTING.md), and maintainers should use [RELEASING.md](RELEASING.md).
 
 ## Components
 
@@ -32,9 +32,21 @@ The runtime is compatible with an existing FleetMind delegation table and NATS v
 ## Development
 
 ```bash
-npm install
+npm ci
 npm run build
 npm test
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for test, compatibility, and pull-request expectations.
+
+## Documentation
+
+- [Consumer onboarding](docs/consumer-onboarding.md)
+- [Architecture and ownership](docs/architecture.md)
+- [Delegation protocol](docs/protocol.md)
+- [Compatibility policy](docs/compatibility.md)
+- [Changelog](CHANGELOG.md)
+- [Security policy](SECURITY.md)
+- [Support](SUPPORT.md)
 
 The next migration milestone is to make FleetMind consume `delegation-core` without changing its Slack behavior. Slack plugin parity precedes a Discord adapter.

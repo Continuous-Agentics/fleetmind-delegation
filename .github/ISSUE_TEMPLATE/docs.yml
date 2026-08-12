@@ -1,0 +1,27 @@
+name: Documentation
+description: Report missing, stale, or confusing documentation.
+title: "docs: "
+labels: ["documentation"]
+body:
+  - type: textarea
+    id: docs_gap
+    attributes:
+      label: Documentation gap
+      description: What is missing, wrong, or difficult to follow?
+    validations:
+      required: true
+  - type: input
+    id: page
+    attributes:
+      label: Page or file
+      placeholder: "README.md, docs/protocol.md, packages/openclaw-plugin/README.md"
+  - type: dropdown
+    id: audience
+    attributes:
+      label: Intended audience
+      options:
+        - Consumer
+        - OpenClaw operator
+        - Contributor
+        - Maintainer
+        - Other

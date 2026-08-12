@@ -1,0 +1,23 @@
+name: Feature request
+description: Suggest an improvement to the delegation runtime or OpenClaw integration.
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What should this package or plugin enable?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context and compatibility impact
+      description: "Identify affected package(s), task lifecycle, DynamoDB schema/indexes, NATS events, or OpenClaw integration."
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      placeholder: |
+        - ...
