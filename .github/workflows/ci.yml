@@ -28,8 +28,9 @@ jobs:
           set -euo pipefail
           PACKAGE_DIR="$(mktemp -d)"
           INSTALL_DIR="$(mktemp -d)"
+          npm pack --workspace @continuous-agentics/delegation-core --pack-destination "$PACKAGE_DIR"
           npm pack --workspace @continuous-agentics/openclaw-fleetmind-delegation --pack-destination "$PACKAGE_DIR"
           cd "$INSTALL_DIR"
           npm init -y
-          npm install --ignore-scripts --omit=peer "$PACKAGE_DIR"/*.tgz
+          npm install --ignore-scripts --omit=peer "$PACKAGE_DIR"/continuous-agentics-delegation-core-*.tgz "$PACKAGE_DIR"/continuous-agentics-openclaw-fleetmind-delegation-*.tgz "@aws-sdk/client-dynamodb@3.1070.0" "@aws-sdk/core@3.974.27" "@aws-sdk/dynamodb-codec@3.973.21" "@smithy/core@3.24.6"
           node --input-type=module -e 'import("@continuous-agentics/delegation-core")'
