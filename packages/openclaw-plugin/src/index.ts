@@ -254,6 +254,7 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
     let stopTerminalEvents: (() => Promise<void>) | undefined;
     let terminalEventGeneration = 0;
     let terminalHandlers = new Set<Promise<void>>();
+    let terminalReconcileTimer: ReturnType<typeof setInterval> | undefined;
     api.registerService({
       id: "fleetmind-delegation-terminal-events",
       async start(ctx) {
@@ -262,13 +263,26 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
         if ((api.pluginConfig ?? {})["terminalEvents"] === undefined) return;
         await stopTerminalEvents?.();
         stopTerminalEvents = undefined;
+        if (terminalReconcileTimer) clearInterval(terminalReconcileTimer);
+        terminalReconcileTimer = undefined;
         await Promise.allSettled([...terminalHandlers]);
         const generation = ++terminalEventGeneration;
         const config = getConfig().terminalEvents!;
         const transport = new NatsTaskEvents({ servers: config.natsServers, subjectPrefix: config.subjectPrefix, onError: (error) => ctx.logger.error(`FleetMind terminal NATS error: ${String(error)}`) });
         const dispose = await transport.subscribeForPm((event) => {
           if (event.event !== "ship" && event.event !== "block" || generation !== terminalEventGeneration) return;
-          const handler = handleTerminalTaskEvent(event as typeof event & { event: "ship" | "block" }, {
+          const deliver = async (): Promise<void> => {
+            const terminalEvent = event.event as "ship" | "block";
+            const leaseId = randomUUID();
+            const claimed = await getLedger().claimTerminalEventDelivery(event.task_id, terminalEvent, leaseId);
+            if (!claimed) {
+              // Compatibility for terminal events produced by older FleetMind
+              // senders, which predate the outbox. New events are either
+              // already delivered or leased by another relay attempt.
+              const task = await getLedger().getTask(event.task_id);
+              if (task?.terminal_event) return;
+            }
+            const delivered = await handleTerminalTaskEvent(event as typeof event & { event: "ship" | "block" }, {
             ledger: getLedger(),
             pmAgentId: config.pmAgentId,
             wakePm: async (agentId, prompt, delivery, legacyThreadUrl) => {
@@ -315,21 +329,51 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
             onError: (message, error) => ctx.logger.error(`${message} ${String(error)}`),
             onInfo: (message) => ctx.logger.info(message),
           });
-          terminalHandlers.add(handler);
-          void handler.then(
-            () => terminalHandlers.delete(handler),
-            () => terminalHandlers.delete(handler),
-          );
-          return handler;
+            if (claimed) {
+              if (delivered) await getLedger().completeTerminalEventDelivery(event.task_id, leaseId);
+              else await getLedger().releaseTerminalEventDelivery(event.task_id, leaseId);
+            }
+          };
+          const tracked = deliver().catch(async (error) => {
+            ctx.logger.error(`FleetMind terminal delivery failed: ${String(error)}`);
+          });
+          terminalHandlers.add(tracked);
+          void tracked.then(() => terminalHandlers.delete(tracked));
+          return tracked;
         });
         if (generation !== terminalEventGeneration) {
           await dispose();
           return;
         }
         stopTerminalEvents = dispose;
+        const reconcile = async (): Promise<void> => {
+          const pending = await getLedger().listPendingTerminalEvents();
+          for (const task of pending) {
+            const outbox = task.terminal_event;
+            if (!outbox || generation !== terminalEventGeneration) continue;
+            await transport.publish({
+              v: "1.0",
+              event: outbox.event,
+              task_id: task.task_id,
+              project: task.project,
+              worker: outbox.worker,
+              delegated_by: task.delegated_by,
+              at: outbox.at,
+              delegation_thread: task.delegation_thread || undefined,
+              delivery_context: task.delivery_context,
+            });
+          }
+        };
+        await reconcile();
+        terminalReconcileTimer = setInterval(() => {
+          void reconcile().catch((error) => ctx.logger.error(`FleetMind terminal reconciliation failed: ${String(error)}`));
+        }, 30_000);
+        terminalReconcileTimer.unref?.();
       },
       async stop() {
         terminalEventGeneration += 1;
+        if (terminalReconcileTimer) clearInterval(terminalReconcileTimer);
+        terminalReconcileTimer = undefined;
         await stopTerminalEvents?.();
         stopTerminalEvents = undefined;
         await Promise.allSettled([...terminalHandlers]);

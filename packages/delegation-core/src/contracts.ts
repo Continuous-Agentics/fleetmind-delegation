@@ -28,6 +28,23 @@ export const DeliveryContextSchema = z.object({
 });
 export type DeliveryContext = z.infer<typeof DeliveryContextSchema>;
 
+/**
+ * A durable terminal-notification outbox, stored with its task record.
+ * The lifecycle update and this record are one DynamoDB item update, so a
+ * worker crash cannot leave a shipped/blocked task with no event to relay.
+ */
+export const TerminalEventOutboxSchema = z.object({
+  event: z.enum(["ship", "block"]),
+  at: z.string(),
+  worker: z.string(),
+  delivery_status: z.enum(["pending", "delivering", "delivered"]),
+  delivery_attempts: z.number().int().nonnegative().default(0),
+  lease_id: z.string().optional(),
+  lease_expires_at: z.string().optional(),
+  delivered_at: z.string().optional(),
+});
+export type TerminalEventOutbox = z.infer<typeof TerminalEventOutboxSchema>;
+
 /** Current compatible DynamoDB task-record shape. */
 export const TaskRecordSchema = z.object({
   PK: z.string(),
@@ -54,6 +71,7 @@ export const TaskRecordSchema = z.object({
   delegation_thread: z.string().default(""),
   delegation_envelope_ts: z.string().default(""),
   delivery_context: DeliveryContextSchema.optional(),
+  terminal_event: TerminalEventOutboxSchema.optional(),
   tracker_link: z.string().nullable().optional(),
   title: z.string().optional(),
   description: z.string().optional(),

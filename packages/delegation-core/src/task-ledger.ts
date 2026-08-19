@@ -39,6 +39,7 @@ import {
   gsi2pk,
   taskPK,
   renderS3Key,
+  type TerminalEventOutbox,
 } from "./contracts.js";
 
 // ── Client factory ────────────────────────────────────────────────────────────
@@ -208,7 +209,7 @@ export class TaskLedger {
     const proj = project ?? (await this._getProject(taskId));
     await this._updateStatus(taskId, {
       updateExpression:
-        "SET #st = :shipped, shipped_at = :now, GSI1PK = :gsi1pk, GSI2PK = :gsi2pk",
+        "SET #st = :shipped, shipped_at = :now, GSI1PK = :gsi1pk, GSI2PK = :gsi2pk, terminal_event = :terminal_event",
       conditionExpression: "#st = :accepted AND #worker = :worker",
       expressionAttributeNames: { "#st": "status", "#worker": "worker" },
       expressionAttributeValues: {
@@ -218,6 +219,7 @@ export class TaskLedger {
         ":now": now,
         ":gsi1pk": gsi1pk(proj, "shipped"),
         ":gsi2pk": gsi2pk("shipped"),
+        ":terminal_event": this._terminalOutbox("ship", now, worker),
       },
       errorContext: "ship (accepted→shipped)",
     });
@@ -234,7 +236,7 @@ export class TaskLedger {
     const proj = project ?? (await this._getProject(taskId));
     await this._updateStatus(taskId, {
       updateExpression:
-        "SET #st = :blocked, blocked_at = :now, GSI1PK = :gsi1pk, GSI2PK = :gsi2pk",
+        "SET #st = :blocked, blocked_at = :now, GSI1PK = :gsi1pk, GSI2PK = :gsi2pk, terminal_event = :terminal_event",
       // DDB ConditionExpression doesn't support IN() with attribute; use OR
       conditionExpression:
         "(#st = :delegated OR #st = :accepted) AND #worker = :worker",
@@ -247,6 +249,7 @@ export class TaskLedger {
         ":now": now,
         ":gsi1pk": gsi1pk(proj, "blocked"),
         ":gsi2pk": gsi2pk("blocked"),
+        ":terminal_event": this._terminalOutbox("block", now, worker),
       },
       errorContext: "block (delegated|accepted→blocked)",
     });
@@ -562,6 +565,116 @@ export class TaskLedger {
     });
   }
 
+  /**
+   * Return terminal outbox records that have not been delivered, including
+   * abandoned leases. The existing status GSIs keep this bounded to terminal
+   * tasks; a dedicated outbox index can be added later if fleet volume needs it.
+   */
+  async listPendingTerminalEvents(limit = 50): Promise<TaskRecord[]> {
+    const summaries = (await Promise.all([
+      this.queryByStatus({ status: "shipped", limit, ascending: true }),
+      this.queryByStatus({ status: "blocked", limit, ascending: true }),
+    ])).flat().slice(0, limit * 2);
+    const tasks = await Promise.all(summaries.map((task) => this.getTask(task.task_id)));
+    const now = nowISO();
+    return tasks.filter((task): task is TaskRecord => {
+      const outbox = task?.terminal_event;
+      return outbox?.delivery_status === "pending" ||
+        (outbox?.delivery_status === "delivering" && !!outbox.lease_expires_at && outbox.lease_expires_at < now);
+    }).slice(0, limit);
+  }
+
+  /** Claim one outbox record before waking a PM. Claims expire so a crashed
+   * relay can be recovered by the next reconciliation pass. */
+  async claimTerminalEventDelivery(
+    taskId: string,
+    event: TerminalEventOutbox["event"],
+    leaseId: string,
+    leaseMs = 60_000,
+  ): Promise<boolean> {
+    const now = nowISO();
+    const leaseExpiresAt = new Date(Date.now() + leaseMs).toISOString().replace(/\.\d{3}Z$/, "Z");
+    try {
+      await this.doc.send(new UpdateCommand({
+        TableName: this.table,
+        Key: { PK: taskPK(taskId) },
+        UpdateExpression: "SET #terminal.#delivery_status = :delivering, #terminal.#lease_id = :lease_id, #terminal.#lease_expires_at = :lease_expires_at, #terminal.#attempts = if_not_exists(#terminal.#attempts, :zero) + :one",
+        ConditionExpression: "attribute_exists(#terminal) AND #terminal.#event = :event AND (#terminal.#delivery_status = :pending OR (#terminal.#delivery_status = :delivering AND #terminal.#lease_expires_at < :now))",
+        ExpressionAttributeNames: {
+          "#terminal": "terminal_event", "#event": "event", "#delivery_status": "delivery_status",
+          "#lease_id": "lease_id", "#lease_expires_at": "lease_expires_at", "#attempts": "delivery_attempts",
+        },
+        ExpressionAttributeValues: {
+          ":event": event, ":pending": "pending", ":delivering": "delivering", ":now": now,
+          ":lease_id": leaseId, ":lease_expires_at": leaseExpiresAt, ":zero": 0, ":one": 1,
+        },
+      }));
+      return true;
+    } catch (error) {
+      if (isConditionFailed(error)) return false;
+      throw error;
+    }
+  }
+
+  async completeTerminalEventDelivery(taskId: string, leaseId: string): Promise<boolean> {
+    try {
+      await this.doc.send(new UpdateCommand({
+        TableName: this.table,
+        Key: { PK: taskPK(taskId) },
+        UpdateExpression: "SET #terminal.#delivery_status = :delivered, #terminal.#delivered_at = :now REMOVE #terminal.#lease_id, #terminal.#lease_expires_at",
+        ConditionExpression: "#terminal.#delivery_status = :delivering AND #terminal.#lease_id = :lease_id",
+        ExpressionAttributeNames: {
+          "#terminal": "terminal_event", "#delivery_status": "delivery_status", "#delivered_at": "delivered_at",
+          "#lease_id": "lease_id", "#lease_expires_at": "lease_expires_at",
+        },
+        ExpressionAttributeValues: { ":delivered": "delivered", ":now": nowISO(), ":delivering": "delivering", ":lease_id": leaseId },
+      }));
+      return true;
+    } catch (error) {
+      if (isConditionFailed(error)) return false;
+      throw error;
+    }
+  }
+
+  /** Mark a successfully handled terminal event delivered. Safe to repeat: a
+   * duplicate NATS delivery simply observes an already-completed outbox. */
+  async markTerminalEventDelivered(taskId: string, event: TerminalEventOutbox["event"]): Promise<boolean> {
+    try {
+      await this.doc.send(new UpdateCommand({
+        TableName: this.table,
+        Key: { PK: taskPK(taskId) },
+        UpdateExpression: "SET #terminal.#delivery_status = :delivered, #terminal.#delivered_at = :now REMOVE #terminal.#lease_id, #terminal.#lease_expires_at",
+        ConditionExpression: "#terminal.#event = :event AND #terminal.#delivery_status <> :delivered",
+        ExpressionAttributeNames: {
+          "#terminal": "terminal_event", "#event": "event", "#delivery_status": "delivery_status",
+          "#delivered_at": "delivered_at", "#lease_id": "lease_id", "#lease_expires_at": "lease_expires_at",
+        },
+        ExpressionAttributeValues: { ":event": event, ":delivered": "delivered", ":now": nowISO() },
+      }));
+      return true;
+    } catch (error) {
+      if (isConditionFailed(error)) return false;
+      throw error;
+    }
+  }
+
+  async releaseTerminalEventDelivery(taskId: string, leaseId: string): Promise<void> {
+    try {
+      await this.doc.send(new UpdateCommand({
+        TableName: this.table,
+        Key: { PK: taskPK(taskId) },
+        UpdateExpression: "SET #terminal.#delivery_status = :pending REMOVE #terminal.#lease_id, #terminal.#lease_expires_at",
+        ConditionExpression: "#terminal.#delivery_status = :delivering AND #terminal.#lease_id = :lease_id",
+        ExpressionAttributeNames: {
+          "#terminal": "terminal_event", "#delivery_status": "delivery_status", "#lease_id": "lease_id", "#lease_expires_at": "lease_expires_at",
+        },
+        ExpressionAttributeValues: { ":pending": "pending", ":delivering": "delivering", ":lease_id": leaseId },
+      }));
+    } catch (error) {
+      if (!isConditionFailed(error)) throw error;
+    }
+  }
+
   // ── GSI queries ───────────────────────────────────────────────────────────
 
   /**
@@ -626,6 +739,10 @@ export class TaskLedger {
     const item = await this.getTask(taskId);
     if (!item) throw new Error(`Task not found: ${taskId}`);
     return item.project;
+  }
+
+  private _terminalOutbox(event: TerminalEventOutbox["event"], at: string, worker: string): TerminalEventOutbox {
+    return { event, at, worker, delivery_status: "pending", delivery_attempts: 0 };
   }
 
   private async _updateStatus(

@@ -43,6 +43,34 @@ test("TaskLedger preserves FleetMind's conditional worker acknowledgement", asyn
   );
 });
 
+test("terminal transitions atomically persist a pending outbox record", async () => {
+  const requests: Array<Record<string, unknown>> = [];
+  const documentClient = {
+    send: async (command: { input: Record<string, unknown> }) => { requests.push(command.input); },
+  };
+  const ledger = new TaskLedger({ tableName: "tasks", documentClient: documentClient as never });
+  await ledger.shipTask("deadbeef", "forge", "fleetmind");
+  const request = requests[0]!;
+  assert.match(String(request.UpdateExpression), /terminal_event = :terminal_event/);
+  assert.deepEqual((request.ExpressionAttributeValues as Record<string, unknown>)[":terminal_event"], {
+    event: "ship", worker: "forge", delivery_status: "pending", delivery_attempts: 0,
+    at: (request.ExpressionAttributeValues as Record<string, unknown>)[":now"],
+  });
+});
+
+test("terminal outbox completion is idempotent", async () => {
+  const requests: Array<Record<string, unknown>> = [];
+  const documentClient = {
+    send: async (command: { input: Record<string, unknown> }) => { requests.push(command.input); },
+  };
+  const ledger = new TaskLedger({ tableName: "tasks", documentClient: documentClient as never });
+  assert.equal(await ledger.markTerminalEventDelivered("deadbeef", "ship"), true);
+  const request = requests[0]!;
+  assert.match(String(request.UpdateExpression), /#terminal.#delivery_status = :delivered/);
+  assert.match(String(request.ConditionExpression), /#terminal.#event = :event/);
+  assert.equal((request.ExpressionAttributeValues as Record<string, unknown>)[":event"], "ship");
+});
+
 test("TaskLedger translates conditional-write failures to non-retryable lifecycle errors", async () => {
   const documentClient = {
     send: async () => { throw new ConditionalCheckFailedException({ $metadata: {}, message: "condition failed" }); },
