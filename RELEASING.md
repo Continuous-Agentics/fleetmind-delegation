@@ -7,7 +7,7 @@ Only maintainers release packages from this repository. It contains two independ
 | Package | Workspace | Tag format | npm status | Automation |
 | --- | --- | --- | --- | --- |
 | `@continuous-agentics/delegation-core` | `packages/delegation-core` | `delegation-core-vVERSION` | Published | Draft-release and Trusted Publishing workflows enabled |
-| `@continuous-agentics/openclaw-delegation-plugin` | `packages/openclaw-plugin` | `openclaw-delegation-plugin-vVERSION` | Not published | Draft-release and Trusted Publishing workflows enabled |
+| `@continuous-agentics/openclaw-fleetmind-delegation` | `packages/openclaw-plugin` | `openclaw-fleetmind-delegation-vVERSION` | Not published | Draft-release and Trusted Publishing workflows enabled |
 
 A package release changes only that package's version and its package-scoped `CHANGELOG.md` section. If one change requires both packages to release, prepare and verify them independently, with separate version bumps, tags, releases, and npm publication checks.
 
@@ -84,16 +84,16 @@ Verify the npm `latest` tag and the GitHub Release, then announce the package na
    npm run build
    npm test
    git diff --check
-   npm pack --workspace @continuous-agentics/openclaw-delegation-plugin --dry-run
+   npm pack --workspace @continuous-agentics/openclaw-fleetmind-delegation --dry-run
    ```
 
-4. Configure npm Trusted Publishing for `@continuous-agentics/openclaw-delegation-plugin`, this repository, and the `Publish OpenClaw delegation plugin to npm` workflow. Verify the configuration before a tag is pushed.
+4. Configure npm Trusted Publishing for `@continuous-agentics/openclaw-fleetmind-delegation`, this repository, and the `Publish OpenClaw delegation plugin to npm` workflow. Verify the configuration before a tag is pushed.
 5. Merge the release PR. Confirm the target version is still unpublished:
 
    ```bash
-   npm view @continuous-agentics/openclaw-delegation-plugin@VERSION version
+   npm view @continuous-agentics/openclaw-fleetmind-delegation@VERSION version
    ```
 
-6. Tag the merged commit as `openclaw-delegation-plugin-vVERSION` and push it. The package-specific release workflow creates a draft GitHub Release. Grace publishes that draft as the human gate; the publish workflow verifies tag/version parity, builds, tests, smoke-tests the tarball, and publishes a prerelease under npm's `beta` tag.
+6. Tag the merged commit as `openclaw-fleetmind-delegation-vVERSION` and push it. The package-specific release workflow creates a draft GitHub Release. Grace publishes that draft as the human gate; the publish workflow verifies tag/version parity, builds, tests, smoke-tests the tarball, and publishes a prerelease under npm's `beta` tag.
 
 Never reuse a published npm version or retag a different commit. If a publish workflow fails after the tag exists, correct the safe-to-retry cause and dispatch it for that same immutable tag; otherwise prepare a new version.

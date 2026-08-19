@@ -8,7 +8,7 @@ a production deployment.
 
 - The plugin package has passed `npm ci`, `npm run build`, `npm test`,
   `npm audit --omit=dev`, `npm pack --workspace
-  @continuous-agentics/openclaw-delegation-plugin --dry-run`, and `git diff
+  @continuous-agentics/openclaw-fleetmind-delegation --dry-run`, and `git diff
   --check` at the candidate commit.
 - Wren and Vesper have separate OpenClaw agent IDs, Slack identities, and least
   privilege access to the same sandbox task table and NATS service.

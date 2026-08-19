@@ -12,9 +12,9 @@ This guide separates the FleetMind product, the published delegation runtime, an
 
 `@continuous-agentics/delegation-core` is the published, independently versioned Node.js package in this repository. Use it when a Node.js service needs FleetMind-compatible task ledger, task-reader, or NATS task-event contracts. It does not provision infrastructure or implement a human-facing channel.
 
-### `@continuous-agentics/openclaw-delegation-plugin`
+### `@continuous-agentics/openclaw-fleetmind-delegation`
 
-`@continuous-agentics/openclaw-delegation-plugin` is the OpenClaw plugin package in this repository. Its manifest ID is `fleetmind-delegation`, which is why OpenClaw configuration uses that name. It provides guarded task lifecycle tools plus optional NATS terminal/delegation handling and Slack delivery. It is not the root `@continuous-agentics/fleetmind-delegation` monorepo package. The first beta must complete the sandbox acceptance and rollback runbook before publication.
+`@continuous-agentics/openclaw-fleetmind-delegation` is the OpenClaw plugin package in this repository. Its manifest ID is `fleetmind-delegation`, which is why OpenClaw configuration uses that name. It provides guarded task lifecycle tools plus optional NATS terminal/delegation handling and Slack delivery. It is not the root `@continuous-agentics/fleetmind-delegation` monorepo package. The first beta must complete the sandbox acceptance and rollback runbook before publication.
 
 ## Before you start
 
@@ -65,7 +65,7 @@ openclaw plugins install ./packages/openclaw-plugin
 After the sandbox beta is published, install its exact version from npm:
 
 ```bash
-openclaw plugins install npm:@continuous-agentics/openclaw-delegation-plugin@0.1.0-beta.1
+openclaw plugins install npm:@continuous-agentics/openclaw-fleetmind-delegation@0.1.0-beta.1
 ```
 
 The install command registers the package's manifest ID, `fleetmind-delegation`. Configure that plugin ID in OpenClaw's configuration, replacing `your-fleet-tasks` and the region with the values from the FleetMind deployment:

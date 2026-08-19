@@ -9,7 +9,7 @@ body:
       label: Affected component
       options:
         - "@continuous-agentics/delegation-core"
-        - "@continuous-agentics/openclaw-delegation-plugin"
+        - "@continuous-agentics/openclaw-fleetmind-delegation"
         - Documentation
         - Repository tooling
     validations:

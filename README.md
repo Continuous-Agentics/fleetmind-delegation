@@ -8,7 +8,7 @@ Start with the [consumer and onboarding guide](docs/consumer-onboarding.md) to c
 
 - [`@continuous-agentics/fleetmind`](https://www.npmjs.com/package/@continuous-agentics/fleetmind) is the fleet operator package. It deploys and manages OpenClaw multi-agent fleets, including delegation infrastructure.
 - [`@continuous-agentics/delegation-core`](packages/delegation-core) is the published Node.js runtime package. It contains the versioned task, lifecycle, delivery-context, DynamoDB ledger/read, and NATS adapters that preserve the FleetMind delegation protocol.
-- [`@continuous-agentics/openclaw-delegation-plugin`](packages/openclaw-plugin) is the separately versioned OpenClaw plugin package in this repository. Its manifest ID is `fleetmind-delegation`; it currently provides read-only task tools and is installed from a repository checkout until its own npm publishing lifecycle is enabled.
+- [`@continuous-agentics/openclaw-fleetmind-delegation`](packages/openclaw-plugin) is the separately versioned OpenClaw plugin package in this repository. Its manifest ID is `fleetmind-delegation`; it currently provides read-only task tools and is installed from a repository checkout until its own npm publishing lifecycle is enabled.
 
 ## Scope of the initial scaffold
 

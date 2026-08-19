@@ -5,7 +5,7 @@ All notable changes to this repository are documented here. This monorepo contai
 | Package | Release-tag prefix | Publication status |
 | --- | --- | --- |
 | `@continuous-agentics/delegation-core` | `delegation-core-v` | Published to npm |
-| `@continuous-agentics/openclaw-delegation-plugin` | `openclaw-delegation-plugin-v` | Release automation ready; not yet published |
+| `@continuous-agentics/openclaw-fleetmind-delegation` | `openclaw-fleetmind-delegation-v` | Release automation ready; not yet published |
 
 This project follows [Semantic Versioning](https://semver.org/). Release notes complement this changelog when a release is published.
 
@@ -16,11 +16,11 @@ This project follows [Semantic Versioning](https://semver.org/). Release notes c
 - Contributor, security, support, release, architecture, protocol, and compatibility documentation for the monorepo.
 - Release/changelog conventions for both npm packages.
 
-## `@continuous-agentics/openclaw-delegation-plugin`
+## `@continuous-agentics/openclaw-fleetmind-delegation`
 
 ### Unreleased
 
-## [openclaw-delegation-plugin-v0.1.0-beta.1] - Unreleased
+## [openclaw-fleetmind-delegation-v0.1.0-beta.1] - Unreleased
 
 ### Added
 
@@ -55,4 +55,4 @@ This project follows [Semantic Versioning](https://semver.org/). Release notes c
 [delegation-core-v0.1.2]: https://github.com/Continuous-Agentics/fleetmind-delegation/compare/delegation-core-v0.1.1...delegation-core-v0.1.2
 [delegation-core-v0.1.1]: https://github.com/Continuous-Agentics/fleetmind-delegation/compare/delegation-core-v0.1.0...delegation-core-v0.1.1
 [delegation-core-v0.1.0]: https://github.com/Continuous-Agentics/fleetmind-delegation/releases/tag/delegation-core-v0.1.0
-[openclaw-delegation-plugin-v0.1.0-beta.1]: https://github.com/Continuous-Agentics/fleetmind-delegation/releases/tag/openclaw-delegation-plugin-v0.1.0-beta.1
+[openclaw-fleetmind-delegation-v0.1.0-beta.1]: https://github.com/Continuous-Agentics/fleetmind-delegation/releases/tag/openclaw-fleetmind-delegation-v0.1.0-beta.1

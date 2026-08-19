@@ -3,7 +3,7 @@ name: Release OpenClaw delegation plugin
 on:
   push:
     tags:
-      - "openclaw-delegation-plugin-v*"
+      - "openclaw-fleetmind-delegation-v*"
 
 permissions: {}
 
@@ -26,7 +26,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#openclaw-delegation-plugin-v}"
+          VERSION="${GITHUB_REF_NAME#openclaw-fleetmind-delegation-v}"
           PRERELEASE=false
           if [[ "$VERSION" =~ -(alpha|beta|rc)(\.|$) ]]; then PRERELEASE=true; fi
           echo "prerelease=${PRERELEASE}" >> "$GITHUB_OUTPUT"
