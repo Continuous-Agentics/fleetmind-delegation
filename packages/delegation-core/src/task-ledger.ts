@@ -18,6 +18,7 @@
 import {
   DynamoDBClient,
   ConditionalCheckFailedException,
+  TransactionCanceledException,
 } from "@aws-sdk/client-dynamodb";
 import {
   DynamoDBDocumentClient,
@@ -25,6 +26,7 @@ import {
   UpdateCommand,
   GetCommand,
   QueryCommand,
+  TransactWriteCommand,
   type QueryCommandInput,
 } from "@aws-sdk/lib-dynamodb";
 import { readFileSync } from "node:fs";
@@ -40,6 +42,8 @@ import {
   taskPK,
   renderS3Key,
   type TerminalEventOutbox,
+  type TerminalEventOutboxRecord,
+  TerminalEventOutboxRecordSchema,
 } from "./contracts.js";
 
 // ── Client factory ────────────────────────────────────────────────────────────
@@ -84,7 +88,7 @@ function todayUTC(): string {
  * real network/service error. Returns true only for ConditionalCheckFailed.
  */
 function isConditionFailed(err: unknown): boolean {
-  return err instanceof ConditionalCheckFailedException;
+  return err instanceof ConditionalCheckFailedException || err instanceof TransactionCanceledException;
 }
 
 // ── Main class ────────────────────────────────────────────────────────────────
@@ -208,21 +212,12 @@ export class TaskLedger {
     const now = nowISO();
     const proj = project ?? (await this._getProject(taskId));
     await this._updateStatus(taskId, {
-      updateExpression:
-        "SET #st = :shipped, shipped_at = :now, GSI1PK = :gsi1pk, GSI2PK = :gsi2pk, terminal_event = :terminal_event",
+      updateExpression: "SET #st = :shipped, shipped_at = :now, GSI1PK = :gsi1pk, GSI2PK = :gsi2pk",
       conditionExpression: "#st = :accepted AND #worker = :worker",
       expressionAttributeNames: { "#st": "status", "#worker": "worker" },
-      expressionAttributeValues: {
-        ":shipped": "shipped",
-        ":accepted": "accepted",
-        ":worker": worker,
-        ":now": now,
-        ":gsi1pk": gsi1pk(proj, "shipped"),
-        ":gsi2pk": gsi2pk("shipped"),
-        ":terminal_event": this._terminalOutbox("ship", now, worker),
-      },
+      expressionAttributeValues: { ":shipped": "shipped", ":accepted": "accepted", ":worker": worker, ":now": now, ":gsi1pk": gsi1pk(proj, "shipped"), ":gsi2pk": gsi2pk("shipped") },
       errorContext: "ship (accepted→shipped)",
-    });
+    }, this._terminalOutboxRecord(taskId, "ship", now, worker, proj));
   }
 
   /**
@@ -236,7 +231,7 @@ export class TaskLedger {
     const proj = project ?? (await this._getProject(taskId));
     await this._updateStatus(taskId, {
       updateExpression:
-        "SET #st = :blocked, blocked_at = :now, GSI1PK = :gsi1pk, GSI2PK = :gsi2pk, terminal_event = :terminal_event",
+        "SET #st = :blocked, blocked_at = :now, GSI1PK = :gsi1pk, GSI2PK = :gsi2pk",
       // DDB ConditionExpression doesn't support IN() with attribute; use OR
       conditionExpression:
         "(#st = :delegated OR #st = :accepted) AND #worker = :worker",
@@ -249,10 +244,9 @@ export class TaskLedger {
         ":now": now,
         ":gsi1pk": gsi1pk(proj, "blocked"),
         ":gsi2pk": gsi2pk("blocked"),
-        ":terminal_event": this._terminalOutbox("block", now, worker),
       },
       errorContext: "block (delegated|accepted→blocked)",
-    });
+    }, this._terminalOutboxRecord(taskId, "block", now, worker, proj));
   }
 
   /**
@@ -565,23 +559,21 @@ export class TaskLedger {
     });
   }
 
-  /**
-   * Return terminal outbox records that have not been delivered, including
-   * abandoned leases. The existing status GSIs keep this bounded to terminal
-   * tasks; a dedicated outbox index can be added later if fleet volume needs it.
-   */
-  async listPendingTerminalEvents(limit = 50): Promise<TaskRecord[]> {
-    const summaries = (await Promise.all([
-      this.queryByStatus({ status: "shipped", limit, ascending: true }),
-      this.queryByStatus({ status: "blocked", limit, ascending: true }),
-    ])).flat().slice(0, limit * 2);
-    const tasks = await Promise.all(summaries.map((task) => this.getTask(task.task_id)));
+  /** Find every relayable outbox record by its own GSI state, not task status.
+   * Both queries paginate until they collect the requested number. */
+  async listPendingTerminalEvents(limit = 50): Promise<TerminalEventOutboxRecord[]> {
+    const [pending, delivering] = await Promise.all([
+      this._queryOutboxState("PENDING", limit),
+      this._queryOutboxState("DELIVERING", limit),
+    ]);
     const now = nowISO();
-    return tasks.filter((task): task is TaskRecord => {
-      const outbox = task?.terminal_event;
-      return outbox?.delivery_status === "pending" ||
-        (outbox?.delivery_status === "delivering" && !!outbox.lease_expires_at && outbox.lease_expires_at < now);
-    }).slice(0, limit);
+    return [...pending, ...delivering.filter((item) => !!item.lease_expires_at && item.lease_expires_at < now)]
+      .sort((a, b) => a.at.localeCompare(b.at)).slice(0, limit);
+  }
+
+  async getTerminalEventOutbox(taskId: string, event: TerminalEventOutbox["event"]): Promise<TerminalEventOutboxRecord | undefined> {
+    const result = await this.doc.send(new GetCommand({ TableName: this.table, Key: { PK: this._outboxPK(taskId, event) } }));
+    return result.Item ? TerminalEventOutboxRecordSchema.parse(result.Item) : undefined;
   }
 
   /** Claim one outbox record before waking a PM. Claims expire so a crashed
@@ -597,16 +589,15 @@ export class TaskLedger {
     try {
       await this.doc.send(new UpdateCommand({
         TableName: this.table,
-        Key: { PK: taskPK(taskId) },
-        UpdateExpression: "SET #terminal.#delivery_status = :delivering, #terminal.#lease_id = :lease_id, #terminal.#lease_expires_at = :lease_expires_at, #terminal.#attempts = if_not_exists(#terminal.#attempts, :zero) + :one",
-        ConditionExpression: "attribute_exists(#terminal) AND #terminal.#event = :event AND (#terminal.#delivery_status = :pending OR (#terminal.#delivery_status = :delivering AND #terminal.#lease_expires_at < :now))",
+        Key: { PK: this._outboxPK(taskId, event) },
+        UpdateExpression: "SET #delivery_status = :delivering, GSI2PK = :gsi, lease_id = :lease_id, lease_expires_at = :lease_expires_at, delivery_attempts = if_not_exists(delivery_attempts, :zero) + :one",
+        ConditionExpression: "event = :event AND (delivery_status = :pending OR (delivery_status = :delivering AND lease_expires_at < :now))",
         ExpressionAttributeNames: {
-          "#terminal": "terminal_event", "#event": "event", "#delivery_status": "delivery_status",
-          "#lease_id": "lease_id", "#lease_expires_at": "lease_expires_at", "#attempts": "delivery_attempts",
+          "#delivery_status": "delivery_status",
         },
         ExpressionAttributeValues: {
           ":event": event, ":pending": "pending", ":delivering": "delivering", ":now": now,
-          ":lease_id": leaseId, ":lease_expires_at": leaseExpiresAt, ":zero": 0, ":one": 1,
+          ":gsi": "OUTBOX#DELIVERING", ":lease_id": leaseId, ":lease_expires_at": leaseExpiresAt, ":zero": 0, ":one": 1,
         },
       }));
       return true;
@@ -616,18 +607,17 @@ export class TaskLedger {
     }
   }
 
-  async completeTerminalEventDelivery(taskId: string, leaseId: string): Promise<boolean> {
+  async completeTerminalEventDelivery(taskId: string, event: TerminalEventOutbox["event"], leaseId: string): Promise<boolean> {
     try {
       await this.doc.send(new UpdateCommand({
         TableName: this.table,
-        Key: { PK: taskPK(taskId) },
-        UpdateExpression: "SET #terminal.#delivery_status = :delivered, #terminal.#delivered_at = :now REMOVE #terminal.#lease_id, #terminal.#lease_expires_at",
-        ConditionExpression: "#terminal.#delivery_status = :delivering AND #terminal.#lease_id = :lease_id",
+        Key: { PK: this._outboxPK(taskId, event) },
+        UpdateExpression: "SET #delivery_status = :delivered, GSI2PK = :gsi, delivered_at = :now REMOVE lease_id, lease_expires_at",
+        ConditionExpression: "delivery_status = :delivering AND lease_id = :lease_id",
         ExpressionAttributeNames: {
-          "#terminal": "terminal_event", "#delivery_status": "delivery_status", "#delivered_at": "delivered_at",
-          "#lease_id": "lease_id", "#lease_expires_at": "lease_expires_at",
+          "#delivery_status": "delivery_status",
         },
-        ExpressionAttributeValues: { ":delivered": "delivered", ":now": nowISO(), ":delivering": "delivering", ":lease_id": leaseId },
+        ExpressionAttributeValues: { ":delivered": "delivered", ":gsi": "OUTBOX#DELIVERED", ":now": nowISO(), ":delivering": "delivering", ":lease_id": leaseId },
       }));
       return true;
     } catch (error) {
@@ -636,39 +626,17 @@ export class TaskLedger {
     }
   }
 
-  /** Mark a successfully handled terminal event delivered. Safe to repeat: a
-   * duplicate NATS delivery simply observes an already-completed outbox. */
-  async markTerminalEventDelivered(taskId: string, event: TerminalEventOutbox["event"]): Promise<boolean> {
+  async releaseTerminalEventDelivery(taskId: string, event: TerminalEventOutbox["event"], leaseId: string): Promise<void> {
     try {
       await this.doc.send(new UpdateCommand({
         TableName: this.table,
-        Key: { PK: taskPK(taskId) },
-        UpdateExpression: "SET #terminal.#delivery_status = :delivered, #terminal.#delivered_at = :now REMOVE #terminal.#lease_id, #terminal.#lease_expires_at",
-        ConditionExpression: "#terminal.#event = :event AND #terminal.#delivery_status <> :delivered",
+        Key: { PK: this._outboxPK(taskId, event) },
+        UpdateExpression: "SET #delivery_status = :pending, GSI2PK = :gsi REMOVE lease_id, lease_expires_at",
+        ConditionExpression: "delivery_status = :delivering AND lease_id = :lease_id",
         ExpressionAttributeNames: {
-          "#terminal": "terminal_event", "#event": "event", "#delivery_status": "delivery_status",
-          "#delivered_at": "delivered_at", "#lease_id": "lease_id", "#lease_expires_at": "lease_expires_at",
+          "#delivery_status": "delivery_status",
         },
-        ExpressionAttributeValues: { ":event": event, ":delivered": "delivered", ":now": nowISO() },
-      }));
-      return true;
-    } catch (error) {
-      if (isConditionFailed(error)) return false;
-      throw error;
-    }
-  }
-
-  async releaseTerminalEventDelivery(taskId: string, leaseId: string): Promise<void> {
-    try {
-      await this.doc.send(new UpdateCommand({
-        TableName: this.table,
-        Key: { PK: taskPK(taskId) },
-        UpdateExpression: "SET #terminal.#delivery_status = :pending REMOVE #terminal.#lease_id, #terminal.#lease_expires_at",
-        ConditionExpression: "#terminal.#delivery_status = :delivering AND #terminal.#lease_id = :lease_id",
-        ExpressionAttributeNames: {
-          "#terminal": "terminal_event", "#delivery_status": "delivery_status", "#lease_id": "lease_id", "#lease_expires_at": "lease_expires_at",
-        },
-        ExpressionAttributeValues: { ":pending": "pending", ":delivering": "delivering", ":lease_id": leaseId },
+        ExpressionAttributeValues: { ":pending": "pending", ":gsi": "OUTBOX#PENDING", ":delivering": "delivering", ":lease_id": leaseId },
       }));
     } catch (error) {
       if (!isConditionFailed(error)) throw error;
@@ -741,8 +709,16 @@ export class TaskLedger {
     return item.project;
   }
 
-  private _terminalOutbox(event: TerminalEventOutbox["event"], at: string, worker: string): TerminalEventOutbox {
-    return { event, at, worker, delivery_status: "pending", delivery_attempts: 0 };
+  private _outboxPK(taskId: string, event: TerminalEventOutbox["event"]): string {
+    return `OUTBOX#TASK#${taskId}#${event}`;
+  }
+
+  private _terminalOutboxRecord(taskId: string, event: TerminalEventOutbox["event"], at: string, worker: string, project: string): TerminalEventOutboxRecord {
+    return {
+      PK: this._outboxPK(taskId, event), GSI2PK: "OUTBOX#PENDING", task_id: taskId,
+      project, delegated_by: "", event, at, worker, delivery_status: "pending", delivery_attempts: 0,
+      expires_at: expiresAt365(),
+    };
   }
 
   private async _updateStatus(
@@ -753,20 +729,27 @@ export class TaskLedger {
       expressionAttributeNames: Record<string, string>;
       expressionAttributeValues: Record<string, unknown>;
       errorContext: string;
-    }
+    },
+    outbox?: TerminalEventOutboxRecord,
   ): Promise<void> {
     try {
       const nameCount = Object.keys(opts.expressionAttributeNames).length;
-      await this.doc.send(
-        new UpdateCommand({
-          TableName: this.table,
-          Key: { PK: taskPK(taskId) },
-          UpdateExpression: opts.updateExpression,
-          ConditionExpression: opts.conditionExpression,
-          ...(nameCount > 0 && { ExpressionAttributeNames: opts.expressionAttributeNames }),
-          ExpressionAttributeValues: opts.expressionAttributeValues,
-        })
-      );
+      const update = {
+        TableName: this.table, Key: { PK: taskPK(taskId) }, UpdateExpression: opts.updateExpression,
+        ConditionExpression: opts.conditionExpression,
+        ...(nameCount > 0 && { ExpressionAttributeNames: opts.expressionAttributeNames }),
+        ExpressionAttributeValues: opts.expressionAttributeValues,
+      };
+      if (outbox) {
+        await this.doc.send(new TransactWriteCommand({
+          TransactItems: [
+            { Update: update },
+            { Put: { TableName: this.table, Item: outbox, ConditionExpression: "attribute_not_exists(PK)" } },
+          ],
+        }));
+      } else {
+        await this.doc.send(new UpdateCommand(update));
+      }
     } catch (err) {
       if (isConditionFailed(err)) {
         throw new TaskConditionError(
@@ -776,6 +759,21 @@ export class TaskLedger {
       }
       throw err;
     }
+  }
+
+  private async _queryOutboxState(state: "PENDING" | "DELIVERING", limit: number): Promise<TerminalEventOutboxRecord[]> {
+    const records: TerminalEventOutboxRecord[] = [];
+    let cursor: Record<string, unknown> | undefined;
+    do {
+      const result = await this.doc.send(new QueryCommand({
+        TableName: this.table, IndexName: "StatusIndex", KeyConditionExpression: "GSI2PK = :pk",
+        ExpressionAttributeValues: { ":pk": `OUTBOX#${state}` }, Limit: limit - records.length,
+        ...(cursor && { ExclusiveStartKey: cursor }),
+      }));
+      records.push(...(result.Items ?? []).map((item) => TerminalEventOutboxRecordSchema.parse(item)));
+      cursor = result.LastEvaluatedKey;
+    } while (cursor && records.length < limit);
+    return records;
   }
 
   private async _queryToSummary(

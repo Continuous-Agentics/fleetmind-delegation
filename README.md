@@ -8,7 +8,7 @@ Start with the [consumer and onboarding guide](docs/consumer-onboarding.md) to c
 
 - [`@continuous-agentics/fleetmind`](https://www.npmjs.com/package/@continuous-agentics/fleetmind) is the fleet operator package. It deploys and manages OpenClaw multi-agent fleets, including delegation infrastructure.
 - [`@continuous-agentics/delegation-core`](packages/delegation-core) is the published Node.js runtime package. It contains the versioned task, lifecycle, delivery-context, DynamoDB ledger/read, and NATS adapters that preserve the FleetMind delegation protocol.
-- [`@continuous-agentics/openclaw-fleetmind-delegation`](packages/openclaw-plugin) is the separately versioned OpenClaw plugin package in this repository. Its manifest ID is `fleetmind-delegation`; it currently provides read-only task tools and is installed from a repository checkout until its own npm publishing lifecycle is enabled.
+- [`@continuous-agentics/openclaw-fleetmind-delegation`](packages/openclaw-plugin) is the separately versioned OpenClaw plugin package in this repository. Its manifest ID is `fleetmind-delegation`; it provides task lifecycle tools and is published as a beta. Until `latest` is promoted from the incompatible `0.1.0-beta.1`, install with the `beta` dist-tag or an exact beta version.
 
 ## Scope of the initial scaffold
 
@@ -21,10 +21,11 @@ This repository preserves the FleetMind delegation contract without changing beh
 
 FleetMind remains responsible for provisioning, templates, health, upgrades, recovery, and its optional operator CLI. The plugin will own live OpenClaw tools, terminal handling, and channel delivery.
 
-## Install the published runtime
+## Install published packages
 
 ```bash
 npm install @continuous-agentics/delegation-core
+openclaw plugins install npm:@continuous-agentics/openclaw-fleetmind-delegation@beta
 ```
 
 The runtime is compatible with an existing FleetMind delegation table and NATS v1.0 task-event protocol. It does not provision infrastructure or migrate records. See the [onboarding guide](docs/consumer-onboarding.md) for Node.js and OpenClaw setup, least-privilege access, and current plugin limits.

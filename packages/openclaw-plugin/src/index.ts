@@ -274,13 +274,13 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
           const deliver = async (): Promise<void> => {
             const terminalEvent = event.event as "ship" | "block";
             const leaseId = randomUUID();
-            const claimed = await getLedger().claimTerminalEventDelivery(event.task_id, terminalEvent, leaseId);
+            const leaseMs = api.runtime.agent.resolveAgentTimeoutMs({ cfg: ctx.config }) + 30_000;
+            const claimed = await getLedger().claimTerminalEventDelivery(event.task_id, terminalEvent, leaseId, leaseMs);
             if (!claimed) {
               // Compatibility for terminal events produced by older FleetMind
-              // senders, which predate the outbox. New events are either
-              // already delivered or leased by another relay attempt.
-              const task = await getLedger().getTask(event.task_id);
-              if (task?.terminal_event) return;
+              // senders, which predate the standalone outbox record.
+              const outbox = await getLedger().getTerminalEventOutbox(event.task_id, terminalEvent);
+              if (outbox) return;
             }
             const delivered = await handleTerminalTaskEvent(event as typeof event & { event: "ship" | "block" }, {
             ledger: getLedger(),
@@ -330,8 +330,8 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
             onInfo: (message) => ctx.logger.info(message),
           });
             if (claimed) {
-              if (delivered) await getLedger().completeTerminalEventDelivery(event.task_id, leaseId);
-              else await getLedger().releaseTerminalEventDelivery(event.task_id, leaseId);
+              if (delivered) await getLedger().completeTerminalEventDelivery(event.task_id, terminalEvent, leaseId);
+              else await getLedger().releaseTerminalEventDelivery(event.task_id, terminalEvent, leaseId);
             }
           };
           const tracked = deliver().catch(async (error) => {
@@ -349,17 +349,16 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
         const reconcile = async (): Promise<void> => {
           const pending = await getLedger().listPendingTerminalEvents();
           for (const task of pending) {
-            const outbox = task.terminal_event;
-            if (!outbox || generation !== terminalEventGeneration) continue;
+            if (generation !== terminalEventGeneration) continue;
             await transport.publish({
               v: "1.0",
-              event: outbox.event,
+              event: task.event,
               task_id: task.task_id,
               project: task.project,
-              worker: outbox.worker,
-              delegated_by: task.delegated_by,
-              at: outbox.at,
-              delegation_thread: task.delegation_thread || undefined,
+              worker: task.worker,
+              delegated_by: task.delegated_by || undefined,
+              at: task.at,
+              delegation_thread: task.delegation_thread,
               delivery_context: task.delivery_context,
             });
           }

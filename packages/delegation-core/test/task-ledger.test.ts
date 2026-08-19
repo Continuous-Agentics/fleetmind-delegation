@@ -51,10 +51,14 @@ test("terminal transitions atomically persist a pending outbox record", async ()
   const ledger = new TaskLedger({ tableName: "tasks", documentClient: documentClient as never });
   await ledger.shipTask("deadbeef", "forge", "fleetmind");
   const request = requests[0]!;
-  assert.match(String(request.UpdateExpression), /terminal_event = :terminal_event/);
-  assert.deepEqual((request.ExpressionAttributeValues as Record<string, unknown>)[":terminal_event"], {
-    event: "ship", worker: "forge", delivery_status: "pending", delivery_attempts: 0,
-    at: (request.ExpressionAttributeValues as Record<string, unknown>)[":now"],
+  const items = request.TransactItems as Array<Record<string, Record<string, unknown>>>;
+  assert.equal(items.length, 2);
+  assert.match(String(items[0]?.Update?.UpdateExpression), /#st = :shipped/);
+  assert.deepEqual(items[1]?.Put?.Item, {
+    PK: "OUTBOX#TASK#deadbeef#ship", GSI2PK: "OUTBOX#PENDING", task_id: "deadbeef",
+    project: "fleetmind", delegated_by: "", event: "ship", worker: "forge", delivery_status: "pending",
+    delivery_attempts: 0, at: (items[0]?.Update?.ExpressionAttributeValues as Record<string, unknown>)[":now"],
+    expires_at: (items[1]?.Put?.Item as Record<string, unknown>)["expires_at"],
   });
 });
 
@@ -64,11 +68,32 @@ test("terminal outbox completion is idempotent", async () => {
     send: async (command: { input: Record<string, unknown> }) => { requests.push(command.input); },
   };
   const ledger = new TaskLedger({ tableName: "tasks", documentClient: documentClient as never });
-  assert.equal(await ledger.markTerminalEventDelivered("deadbeef", "ship"), true);
+  assert.equal(await ledger.completeTerminalEventDelivery("deadbeef", "ship", "lease"), true);
   const request = requests[0]!;
-  assert.match(String(request.UpdateExpression), /#terminal.#delivery_status = :delivered/);
-  assert.match(String(request.ConditionExpression), /#terminal.#event = :event/);
-  assert.equal((request.ExpressionAttributeValues as Record<string, unknown>)[":event"], "ship");
+  assert.deepEqual(request.Key, { PK: "OUTBOX#TASK#deadbeef#ship" });
+  assert.match(String(request.UpdateExpression), /GSI2PK = :gsi/);
+  assert.equal((request.ExpressionAttributeValues as Record<string, unknown>)[":gsi"], "OUTBOX#DELIVERED");
+});
+
+test("terminal outbox discovery paginates its dedicated states, independent of task status", async () => {
+  const requests: Array<Record<string, unknown>> = [];
+  const outbox = (id: string, state: "PENDING" | "DELIVERING", lease?: string) => ({
+    PK: `OUTBOX#TASK#${id}#ship`, GSI2PK: `OUTBOX#${state}`, task_id: id, project: "fleetmind",
+    delegated_by: "wren", event: "ship", at: `2026-08-10T00:00:0${id[0]}Z`, worker: "forge",
+    delivery_status: state.toLowerCase(), delivery_attempts: 0, expires_at: 1, ...(lease && { lease_expires_at: lease }),
+  });
+  const documentClient = { send: async (command: { input: Record<string, unknown> }) => {
+    requests.push(command.input);
+    const state = (command.input.ExpressionAttributeValues as Record<string, string>)[":pk"];
+    if (state === "OUTBOX#PENDING" && !command.input.ExclusiveStartKey) return { Items: [outbox("1eadbeef", "PENDING")], LastEvaluatedKey: { PK: "cursor" } };
+    if (state === "OUTBOX#PENDING") return { Items: [outbox("2eadbeef", "PENDING")] };
+    return { Items: [outbox("3eadbeef", "DELIVERING", "2000-01-01T00:00:00Z")] };
+  }};
+  const ledger = new TaskLedger({ tableName: "tasks", documentClient: documentClient as never });
+  const events = await ledger.listPendingTerminalEvents(3);
+  assert.equal(events.length, 3);
+  assert.ok(requests.some((request) => request.ExclusiveStartKey));
+  assert.ok(requests.every((request) => request.IndexName === "StatusIndex"));
 });
 
 test("TaskLedger translates conditional-write failures to non-retryable lifecycle errors", async () => {

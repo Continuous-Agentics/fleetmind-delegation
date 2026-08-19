@@ -45,6 +45,20 @@ export const TerminalEventOutboxSchema = z.object({
 });
 export type TerminalEventOutbox = z.infer<typeof TerminalEventOutboxSchema>;
 
+/** Separate durable relay record. It deliberately duplicates only the safe
+ * terminal envelope fields, so discovery never depends on task status. */
+export const TerminalEventOutboxRecordSchema = TerminalEventOutboxSchema.extend({
+  PK: z.string(),
+  GSI2PK: z.string(),
+  task_id: z.string().regex(/^[0-9a-f]{8}$/),
+  project: z.string(),
+  delegated_by: z.string(),
+  delivery_context: DeliveryContextSchema.optional(),
+  delegation_thread: z.string().optional(),
+  expires_at: z.number(),
+});
+export type TerminalEventOutboxRecord = z.infer<typeof TerminalEventOutboxRecordSchema>;
+
 /** Current compatible DynamoDB task-record shape. */
 export const TaskRecordSchema = z.object({
   PK: z.string(),
@@ -71,7 +85,6 @@ export const TaskRecordSchema = z.object({
   delegation_thread: z.string().default(""),
   delegation_envelope_ts: z.string().default(""),
   delivery_context: DeliveryContextSchema.optional(),
-  terminal_event: TerminalEventOutboxSchema.optional(),
   tracker_link: z.string().nullable().optional(),
   title: z.string().optional(),
   description: z.string().optional(),

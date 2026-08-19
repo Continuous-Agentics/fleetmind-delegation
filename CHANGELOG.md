@@ -5,7 +5,7 @@ All notable changes to this repository are documented here. This monorepo contai
 | Package | Release-tag prefix | Publication status |
 | --- | --- | --- |
 | `@continuous-agentics/delegation-core` | `delegation-core-v` | Published to npm |
-| `@continuous-agentics/openclaw-fleetmind-delegation` | `openclaw-fleetmind-delegation-v` | Release automation ready; not yet published |
+| `@continuous-agentics/openclaw-fleetmind-delegation` | `openclaw-fleetmind-delegation-v` | Published to npm as beta; use the `beta` dist-tag or pin an exact version until `latest` is promoted |
 
 This project follows [Semantic Versioning](https://semver.org/). Release notes complement this changelog when a release is published.
 
@@ -25,6 +25,7 @@ This project follows [Semantic Versioning](https://semver.org/). Release notes c
 ### Fixed
 
 - Declare the exact OpenClaw-managed AWS SDK peer set so the plugin install root resolves a compatible DynamoDB runtime.
+- Persist terminal `ship`/`block` notifications in a durable DynamoDB outbox and reconcile them through NATS, preventing a worker-side crash from silently losing the PM wake.
 
 ## [openclaw-fleetmind-delegation-v0.1.0-beta.4] - Unreleased
 
