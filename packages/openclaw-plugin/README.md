@@ -63,6 +63,20 @@ Configure that manifest ID in OpenClaw, replacing the placeholders with the task
 
 `awsRegion` is optional when `AWS_REGION` or `AWS_DEFAULT_REGION` is set. Configure `workerAgentIds` to bind each worker agent to its FleetMind worker ID. Configure `reviewerAgentIds` with only the designated human-reviewer agent IDs before allowlisting sign-off or merge. The gateway host needs DynamoDB read/write access to the configured task table and its `ProjectStatusIndex` and `StatusIndex` GSIs. Restart the gateway after adding or changing the configuration.
 
+### Populate configuration before use
+
+Installation only registers the plugin; it does **not** create a task table, discover FleetMind settings, or populate this configuration. Before using any task or event tool, edit the OpenClaw config file that your gateway loads and populate the `plugins.entries.fleetmind-delegation.config` block shown above with your own table, region, worker bindings, and reviewer IDs. Restart the gateway, then confirm it is loaded with:
+
+```bash
+openclaw plugins inspect fleetmind-delegation --runtime --json
+```
+
+For terminal or worker delivery, also populate the matching `terminalEvents` or `delegationEvents` block below. Leave those blocks absent when only the read/lifecycle tools are required.
+
+#### FleetMind-managed fleets (planned)
+
+FleetMind support for rendering this configuration from `fleet.yaml` is tracked in [Continuous-Agentics/fleetmind#307](https://github.com/Continuous-Agentics/fleetmind/issues/307). Until that work ships, FleetMind users must populate the standard OpenClaw configuration manually, exactly as standalone users do. The plugin deliberately has no runtime dependency on FleetMind files, so it remains usable outside a FleetMind deployment.
+
 ### Optional NATS and Slack delivery
 
 `terminalEvents` enables the PM subscriber for `ship` and `block`. `delegationEvents` enables a worker subscriber for one configured OpenClaw agent. Set `workerHomeSlack` to open each delegated task in a fresh worker-home-channel thread; without it, a Slack task falls back to the authoritative planning thread. The worker service atomically acknowledges (claims) the delegated task before posting a receipt or waking the agent, so duplicate NATS deliveries do not start duplicate worker runs. Slack receipt failure never prevents the claimed task's worker wake; a wake failure leaves the claimed task for operational reconciliation.
