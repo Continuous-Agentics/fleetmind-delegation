@@ -23,3 +23,13 @@ jobs:
       - run: npm test
       - run: npm pack --dry-run --workspace @continuous-agentics/delegation-core
       - run: npm pack --dry-run --workspace @continuous-agentics/openclaw-fleetmind-delegation
+      - name: Verify packaged plugin dependencies load in a clean install
+        run: |
+          set -euo pipefail
+          PACKAGE_DIR="$(mktemp -d)"
+          INSTALL_DIR="$(mktemp -d)"
+          npm pack --workspace @continuous-agentics/openclaw-fleetmind-delegation --pack-destination "$PACKAGE_DIR"
+          cd "$INSTALL_DIR"
+          npm init -y
+          npm install --ignore-scripts --omit=peer "$PACKAGE_DIR"/*.tgz
+          node --input-type=module -e 'import("@continuous-agentics/delegation-core")'
