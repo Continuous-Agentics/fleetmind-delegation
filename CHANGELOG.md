@@ -20,6 +20,13 @@ This project follows [Semantic Versioning](https://semver.org/). Release notes c
 
 ### Unreleased
 
+## [openclaw-fleetmind-delegation-v0.1.0-beta.3] - Unreleased
+
+### Fixed
+
+- Pin the compatible Smithy runtime dependency so the plugin loads under the supported OpenClaw runtime.
+- Include package repository metadata required for npm provenance verification.
+
 ## [openclaw-fleetmind-delegation-v0.1.0-beta.1] - Unreleased
 
 ### Added
@@ -55,4 +62,5 @@ This project follows [Semantic Versioning](https://semver.org/). Release notes c
 [delegation-core-v0.1.2]: https://github.com/Continuous-Agentics/fleetmind-delegation/compare/delegation-core-v0.1.1...delegation-core-v0.1.2
 [delegation-core-v0.1.1]: https://github.com/Continuous-Agentics/fleetmind-delegation/compare/delegation-core-v0.1.0...delegation-core-v0.1.1
 [delegation-core-v0.1.0]: https://github.com/Continuous-Agentics/fleetmind-delegation/releases/tag/delegation-core-v0.1.0
+[openclaw-fleetmind-delegation-v0.1.0-beta.3]: https://github.com/Continuous-Agentics/fleetmind-delegation/releases/tag/openclaw-fleetmind-delegation-v0.1.0-beta.3
 [openclaw-fleetmind-delegation-v0.1.0-beta.1]: https://github.com/Continuous-Agentics/fleetmind-delegation/releases/tag/openclaw-fleetmind-delegation-v0.1.0-beta.1
