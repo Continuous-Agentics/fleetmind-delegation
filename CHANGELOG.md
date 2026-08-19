@@ -20,12 +20,11 @@ This project follows [Semantic Versioning](https://semver.org/). Release notes c
 
 ### Unreleased
 
-- Initial package source and OpenClaw manifest, including native task lifecycle tools, NATS terminal-event handling, and Slack delegation delivery.
-
 ## [openclaw-delegation-plugin-v0.1.0-beta.1] - Unreleased
 
 ### Added
 
+- Initial package source and OpenClaw manifest, including native task lifecycle tools, NATS terminal-event handling, and Slack delegation delivery.
 - Package-specific draft-release and npm Trusted Publishing workflows for the first sandbox beta.
 - Sandbox acceptance and rollback runbook, including the required recovery procedure for a task claimed before a failed worker wake.
 

@@ -6,19 +6,13 @@ name: Publish OpenClaw delegation plugin to npm
 on:
   release:
     types: [published]
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: Existing plugin tag to publish (e.g. openclaw-delegation-plugin-v0.1.0-beta.1)
-        required: true
-        type: string
 
 permissions:
   id-token: write
   contents: read
 
 concurrency:
-  group: openclaw-delegation-plugin-npm-publish-${{ github.ref }}
+  group: openclaw-delegation-plugin-npm-publish-${{ github.event.release.tag_name }}
   cancel-in-progress: false
 
 jobs:
@@ -26,11 +20,7 @@ jobs:
     name: Build & publish OpenClaw delegation plugin
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    if: >-
-      github.actor == 'ggettert' && (
-        (github.event_name == 'release' && startsWith(github.event.release.tag_name, 'openclaw-delegation-plugin-v')) ||
-        (github.event_name == 'workflow_dispatch' && startsWith(inputs.tag, 'openclaw-delegation-plugin-v'))
-      )
+    if: github.actor == 'ggettert' && startsWith(github.event.release.tag_name, 'openclaw-delegation-plugin-v')
     permissions:
       id-token: write
       contents: read
@@ -39,7 +29,7 @@ jobs:
       - name: Checkout release tag
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
+          ref: ${{ github.event.release.tag_name }}
           fetch-depth: 0
 
       - name: Set up Node 22
@@ -58,7 +48,7 @@ jobs:
         id: release
         shell: bash
         env:
-          TARGET_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
+          TARGET_TAG: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
           TAG="${TARGET_TAG}"

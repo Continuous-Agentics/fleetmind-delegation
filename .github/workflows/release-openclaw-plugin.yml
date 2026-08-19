@@ -21,9 +21,20 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Classify release channel
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#openclaw-delegation-plugin-v}"
+          PRERELEASE=false
+          if [[ "$VERSION" =~ -(alpha|beta|rc)(\.|$) ]]; then PRERELEASE=true; fi
+          echo "prerelease=${PRERELEASE}" >> "$GITHUB_OUTPUT"
+
       # Publishing this draft as Grace is the deliberate release gate.
       - name: Create draft GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           draft: true
+          prerelease: ${{ steps.release.outputs.prerelease }}

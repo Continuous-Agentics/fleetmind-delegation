@@ -54,12 +54,18 @@ const active = await reader.listByStatus({
 
 ## Install the OpenClaw plugin package
 
-The OpenClaw plugin package is not published yet. Install it from this repository checkout:
+Before the first beta is published, install the plugin from this repository checkout:
 
 ```bash
 npm ci
 npm run build
 openclaw plugins install ./packages/openclaw-plugin
+```
+
+After the sandbox beta is published, install its exact version from npm:
+
+```bash
+openclaw plugins install npm:@continuous-agentics/openclaw-delegation-plugin@0.1.0-beta.1
 ```
 
 The install command registers the package's manifest ID, `fleetmind-delegation`. Configure that plugin ID in OpenClaw's configuration, replacing `your-fleet-tasks` and the region with the values from the FleetMind deployment:
@@ -80,7 +86,7 @@ The install command registers the package's manifest ID, `fleetmind-delegation`.
 }
 ```
 
-`awsRegion` is optional when `AWS_REGION` or `AWS_DEFAULT_REGION` is set. Restart the gateway after changing plugin configuration.
+`awsRegion` is optional when `AWS_REGION` or `AWS_DEFAULT_REGION` is set. Configure a `workerAgentIds` binding for each worker agent and configure `reviewerAgentIds` with only designated human-reviewer agent IDs before allowlisting sign-off or merge. Restart the gateway after changing plugin configuration.
 
 The plugin exposes task reads plus guarded `ack`, `ship`, `block`, `signoff`, and `merge` lifecycle tools. Worker transitions require an `workerAgentIds` binding; sign-off and merge fail closed unless the caller appears in `reviewerAgentIds`. It does not create tasks.
 

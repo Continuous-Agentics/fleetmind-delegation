@@ -23,14 +23,20 @@ Lifecycle transitions use `TaskLedger` conditional writes, so the task state mac
 
 Terminal and worker-event NATS services are opt-in. When configured, they require an authoritative task-ledger record before routing or waking an agent, post best-effort Slack receipts, and wake the matching OpenClaw thread session. Discord delivery remains out of scope. The plugin does not create tasks or publish/release packages.
 
-## Install from this repository
+## Installation
 
-This package is not published yet. Install it from a checkout:
+Before the first beta is published, install it from a checkout:
 
 ```bash
 npm ci
 npm run build
 openclaw plugins install ./packages/openclaw-plugin
+```
+
+After the sandbox beta is published, install its exact version from npm:
+
+```bash
+openclaw plugins install npm:@continuous-agentics/openclaw-delegation-plugin@0.1.0-beta.1
 ```
 
 The command registers the plugin manifest ID, `fleetmind-delegation`.
