@@ -20,6 +20,12 @@ This project follows [Semantic Versioning](https://semver.org/). Release notes c
 
 ### Unreleased
 
+## [openclaw-fleetmind-delegation-v0.1.0-beta.4] - Unreleased
+
+### Fixed
+
+- Use the OpenClaw-compatible AWS SDK dependency set through `@continuous-agentics/delegation-core@0.1.3`.
+
 ## [openclaw-fleetmind-delegation-v0.1.0-beta.3] - Unreleased
 
 ### Fixed
@@ -36,6 +42,12 @@ This project follows [Semantic Versioning](https://semver.org/). Release notes c
 - Sandbox acceptance and rollback runbook, including the required recovery procedure for a task claimed before a failed worker wake.
 
 ## `@continuous-agentics/delegation-core`
+
+## [delegation-core-v0.1.3] - Unreleased
+
+### Fixed
+
+- Pin a compatible AWS SDK, DynamoDB codec, and Smithy dependency set for OpenClaw-managed plugin installs.
 
 ## [delegation-core-v0.1.2] - 2026-08-11
 
@@ -59,8 +71,10 @@ This project follows [Semantic Versioning](https://semver.org/). Release notes c
 - Channel-neutral delivery context with support for legacy Slack correlation fields.
 
 [Unreleased]: https://github.com/Continuous-Agentics/fleetmind-delegation/compare/delegation-core-v0.1.2...HEAD
+[delegation-core-v0.1.3]: https://github.com/Continuous-Agentics/fleetmind-delegation/releases/tag/delegation-core-v0.1.3
 [delegation-core-v0.1.2]: https://github.com/Continuous-Agentics/fleetmind-delegation/compare/delegation-core-v0.1.1...delegation-core-v0.1.2
 [delegation-core-v0.1.1]: https://github.com/Continuous-Agentics/fleetmind-delegation/compare/delegation-core-v0.1.0...delegation-core-v0.1.1
 [delegation-core-v0.1.0]: https://github.com/Continuous-Agentics/fleetmind-delegation/releases/tag/delegation-core-v0.1.0
+[openclaw-fleetmind-delegation-v0.1.0-beta.4]: https://github.com/Continuous-Agentics/fleetmind-delegation/releases/tag/openclaw-fleetmind-delegation-v0.1.0-beta.4
 [openclaw-fleetmind-delegation-v0.1.0-beta.3]: https://github.com/Continuous-Agentics/fleetmind-delegation/releases/tag/openclaw-fleetmind-delegation-v0.1.0-beta.3
 [openclaw-fleetmind-delegation-v0.1.0-beta.1]: https://github.com/Continuous-Agentics/fleetmind-delegation/releases/tag/openclaw-fleetmind-delegation-v0.1.0-beta.1
