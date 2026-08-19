@@ -1,0 +1,97 @@
+name: Publish OpenClaw delegation plugin to npm
+
+# Fires when Grace publishes a GitHub Release created from a package-specific
+# tag. A release created by GITHUB_TOKEN does not emit release:published, so
+# publishing the draft is the intentional human gate.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing plugin tag to publish (e.g. openclaw-delegation-plugin-v0.1.0-beta.1)
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: openclaw-delegation-plugin-npm-publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build & publish OpenClaw delegation plugin
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: >-
+      github.actor == 'ggettert' && (
+        (github.event_name == 'release' && startsWith(github.event.release.tag_name, 'openclaw-delegation-plugin-v')) ||
+        (github.event_name == 'workflow_dispatch' && startsWith(inputs.tag, 'openclaw-delegation-plugin-v'))
+      )
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
+          fetch-depth: 0
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Upgrade npm for OIDC trusted publishing
+        run: npm install -g npm@latest
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify package version matches tag
+        id: release
+        shell: bash
+        env:
+          TARGET_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          TAG="${TARGET_TAG}"
+          VERSION="${TAG#openclaw-delegation-plugin-v}"
+          PACKAGE_VERSION="$(node -p "require('./packages/openclaw-plugin/package.json').version")"
+          if [[ "$TAG" == "$VERSION" || "$VERSION" != "$PACKAGE_VERSION" ]]; then
+            echo "::error::Tag/version mismatch: tag=$TAG package.json=$PACKAGE_VERSION"
+            exit 1
+          fi
+          NPM_TAG="latest"
+          if [[ "$VERSION" =~ -(alpha|beta|rc)(\.|$) ]]; then NPM_TAG="beta"; fi
+          echo "npm_tag=${NPM_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+      - name: Smoke test installable tarball
+        shell: bash
+        run: |
+          set -euo pipefail
+          TMPDIR="$(mktemp -d)"
+          npm pack --workspace @continuous-agentics/openclaw-delegation-plugin --pack-destination "$TMPDIR"
+          mkdir -p "$TMPDIR/install"
+          cd "$TMPDIR/install"
+          npm init -y >/dev/null
+          npm install "$TMPDIR"/*.tgz
+          test -f node_modules/@continuous-agentics/openclaw-delegation-plugin/openclaw.plugin.json
+
+      - name: Publish
+        run: |
+          unset NODE_AUTH_TOKEN
+          unset NPM_TOKEN
+          npm publish --workspace @continuous-agentics/openclaw-delegation-plugin --access public --tag "${{ steps.release.outputs.npm_tag }}" --provenance

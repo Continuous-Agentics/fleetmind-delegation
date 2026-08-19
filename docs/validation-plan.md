@@ -41,3 +41,6 @@ integration coverage.
 
 Retire FleetMind CLI delegation paths only after these checks demonstrate
 behavioral parity and a tested rollback path.
+
+The executable sandbox sequence, evidence record, and recovery/rollback rules
+are defined in [the plugin sandbox runbook](plugin-sandbox-runbook.md).
