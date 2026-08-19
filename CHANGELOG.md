@@ -20,6 +20,12 @@ This project follows [Semantic Versioning](https://semver.org/). Release notes c
 
 ### Unreleased
 
+## [openclaw-fleetmind-delegation-v0.1.0-beta.5] - Unreleased
+
+### Fixed
+
+- Declare the exact OpenClaw-managed AWS SDK peer set so the plugin install root resolves a compatible DynamoDB runtime.
+
 ## [openclaw-fleetmind-delegation-v0.1.0-beta.4] - Unreleased
 
 ### Fixed
@@ -75,6 +81,7 @@ This project follows [Semantic Versioning](https://semver.org/). Release notes c
 [delegation-core-v0.1.2]: https://github.com/Continuous-Agentics/fleetmind-delegation/compare/delegation-core-v0.1.1...delegation-core-v0.1.2
 [delegation-core-v0.1.1]: https://github.com/Continuous-Agentics/fleetmind-delegation/compare/delegation-core-v0.1.0...delegation-core-v0.1.1
 [delegation-core-v0.1.0]: https://github.com/Continuous-Agentics/fleetmind-delegation/releases/tag/delegation-core-v0.1.0
+[openclaw-fleetmind-delegation-v0.1.0-beta.5]: https://github.com/Continuous-Agentics/fleetmind-delegation/releases/tag/openclaw-fleetmind-delegation-v0.1.0-beta.5
 [openclaw-fleetmind-delegation-v0.1.0-beta.4]: https://github.com/Continuous-Agentics/fleetmind-delegation/releases/tag/openclaw-fleetmind-delegation-v0.1.0-beta.4
 [openclaw-fleetmind-delegation-v0.1.0-beta.3]: https://github.com/Continuous-Agentics/fleetmind-delegation/releases/tag/openclaw-fleetmind-delegation-v0.1.0-beta.3
 [openclaw-fleetmind-delegation-v0.1.0-beta.1]: https://github.com/Continuous-Agentics/fleetmind-delegation/releases/tag/openclaw-fleetmind-delegation-v0.1.0-beta.1

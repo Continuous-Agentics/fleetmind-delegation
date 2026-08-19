@@ -36,7 +36,7 @@ openclaw plugins install ./packages/openclaw-plugin
 After the sandbox beta is published, install its exact version from npm:
 
 ```bash
-openclaw plugins install npm:@continuous-agentics/openclaw-fleetmind-delegation@0.1.0-beta.4
+openclaw plugins install npm:@continuous-agentics/openclaw-fleetmind-delegation@0.1.0-beta.5
 ```
 
 The command registers the plugin manifest ID, `fleetmind-delegation`.
