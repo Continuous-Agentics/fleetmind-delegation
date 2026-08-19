@@ -7,13 +7,13 @@ Only maintainers release packages from this repository. It contains two independ
 | Package | Workspace | Tag format | npm status | Automation |
 | --- | --- | --- | --- | --- |
 | `@continuous-agentics/delegation-core` | `packages/delegation-core` | `delegation-core-vVERSION` | Published | Draft-release and Trusted Publishing workflows enabled |
-| `@continuous-agentics/openclaw-delegation-plugin` | `packages/openclaw-plugin` | Reserved: `openclaw-delegation-plugin-vVERSION` | Not published | No release or npm publishing workflow yet |
+| `@continuous-agentics/openclaw-delegation-plugin` | `packages/openclaw-plugin` | `openclaw-delegation-plugin-vVERSION` | Not published | Draft-release and Trusted Publishing workflows enabled |
 
 A package release changes only that package's version and its package-scoped `CHANGELOG.md` section. If one change requires both packages to release, prepare and verify them independently, with separate version bumps, tags, releases, and npm publication checks.
 
 ## Current release surface
 
-`@continuous-agentics/delegation-core` is the only package with a release workflow today. The OpenClaw plugin is a second npm package with its own version and package metadata; it is built and tested here but does **not** yet have a publishing workflow. Do not tag or publish the plugin until its release workflow, package smoke test, Trusted Publisher configuration, and documentation are explicitly added.
+Both packages have isolated, package-specific release workflows. The OpenClaw plugin is not yet published; do not tag or publish it until npm Trusted Publishing is configured for the plugin workflow and its sandbox acceptance evidence is recorded.
 
 ## Prepare a delegation-core release
 
@@ -73,6 +73,27 @@ npm install @continuous-agentics/delegation-core@VERSION
 
 Verify the npm `latest` tag and the GitHub Release, then announce the package name, version, and compatibility impact. If publication fails after a tag exists, investigate and retry the workflow for that immutable tag only when the cause is safe to retry; otherwise cut a new version.
 
-## Enabling plugin releases later
+## Prepare an OpenClaw plugin release
 
-Before publishing `@continuous-agentics/openclaw-delegation-plugin`, add package-specific draft-release and npm Trusted Publishing workflows; validate a packed plugin against the declared compatible OpenClaw runtime; configure npm Trusted Publisher identity for that workflow; and replace its `Unreleased` changelog note with tagged package release entries. Until then, consumers install the plugin from a repository checkout as documented in the plugin README.
+1. Complete the sandbox acceptance and rollback record in [the plugin sandbox runbook](docs/plugin-sandbox-runbook.md). Do not use a production fleet for the beta.
+2. Update only `packages/openclaw-plugin/package.json` and its package-scoped `CHANGELOG.md` entry. Use a prerelease version for the first sandbox release.
+3. Run the full repository verification plus the plugin package check:
+
+   ```bash
+   npm ci
+   npm run build
+   npm test
+   git diff --check
+   npm pack --workspace @continuous-agentics/openclaw-delegation-plugin --dry-run
+   ```
+
+4. Configure npm Trusted Publishing for `@continuous-agentics/openclaw-delegation-plugin`, this repository, and the `Publish OpenClaw delegation plugin to npm` workflow. Verify the configuration before a tag is pushed.
+5. Merge the release PR. Confirm the target version is still unpublished:
+
+   ```bash
+   npm view @continuous-agentics/openclaw-delegation-plugin@VERSION version
+   ```
+
+6. Tag the merged commit as `openclaw-delegation-plugin-vVERSION` and push it. The package-specific release workflow creates a draft GitHub Release. Grace publishes that draft as the human gate; the publish workflow verifies tag/version parity, builds, tests, smoke-tests the tarball, and publishes a prerelease under npm's `beta` tag.
+
+Never reuse a published npm version or retag a different commit. If a publish workflow fails after the tag exists, correct the safe-to-retry cause and dispatch it for that same immutable tag; otherwise prepare a new version.

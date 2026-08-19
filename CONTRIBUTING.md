@@ -69,4 +69,4 @@ Keep unrelated refactors out of protocol or security fixes. Never commit credent
 
 ## Releases
 
-Releases are maintainer-only. Each package has an independent version and package-scoped changelog section. `delegation-core` uses tags such as `delegation-core-v0.1.3`; a tag creates a draft GitHub Release, and publication of that release is the deliberate npm Trusted Publishing gate. The plugin has no publication workflow yet, so its package version must not be tagged or published until its release automation and Trusted Publisher are explicitly added. Read [RELEASING.md](RELEASING.md) before preparing either package for release.
+Releases are maintainer-only. Each package has an independent version and package-scoped changelog section. `delegation-core` uses tags such as `delegation-core-v0.1.3`; the plugin uses `openclaw-delegation-plugin-v0.1.0-beta.1`. A package-specific tag creates a draft GitHub Release, and publication of that release is the deliberate npm Trusted Publishing gate. Read [RELEASING.md](RELEASING.md) before preparing either package for release.

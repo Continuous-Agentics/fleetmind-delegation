@@ -1,6 +1,6 @@
 {
   "name": "@continuous-agentics/openclaw-delegation-plugin",
-  "version": "0.1.0",
+  "version": "0.1.0-beta.1",
   "description": "OpenClaw plugin boundary for FleetMind delegation.",
   "license": "MIT",
   "type": "module",

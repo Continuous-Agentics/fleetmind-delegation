@@ -1,0 +1,40 @@
+name: Release OpenClaw delegation plugin
+
+on:
+  push:
+    tags:
+      - "openclaw-delegation-plugin-v*"
+
+permissions: {}
+
+jobs:
+  release:
+    name: Create draft GitHub Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.actor == 'ggettert' || github.actor == 'wren-on-ca[bot]'
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Classify release channel
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#openclaw-delegation-plugin-v}"
+          PRERELEASE=false
+          if [[ "$VERSION" =~ -(alpha|beta|rc)(\.|$) ]]; then PRERELEASE=true; fi
+          echo "prerelease=${PRERELEASE}" >> "$GITHUB_OUTPUT"
+
+      # Publishing this draft as Grace is the deliberate release gate.
+      - name: Create draft GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          draft: true
+          prerelease: ${{ steps.release.outputs.prerelease }}

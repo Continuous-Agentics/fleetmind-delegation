@@ -14,13 +14,13 @@ This guide separates the FleetMind product, the published delegation runtime, an
 
 ### `@continuous-agentics/openclaw-delegation-plugin`
 
-`@continuous-agentics/openclaw-delegation-plugin` is the OpenClaw plugin package in this repository. Its manifest ID is `fleetmind-delegation`, which is why OpenClaw configuration uses that name. It is currently a read-only integration package and is installed from a repository checkout; it is not the root `@continuous-agentics/fleetmind-delegation` monorepo package.
+`@continuous-agentics/openclaw-delegation-plugin` is the OpenClaw plugin package in this repository. Its manifest ID is `fleetmind-delegation`, which is why OpenClaw configuration uses that name. It provides guarded task lifecycle tools plus optional NATS terminal/delegation handling and Slack delivery. It is not the root `@continuous-agentics/fleetmind-delegation` monorepo package. The first beta must complete the sandbox acceptance and rollback runbook before publication.
 
 ## Before you start
 
 You need Node.js 20 or newer. Both `delegation-core` consumers and the OpenClaw plugin require an existing FleetMind DynamoDB task table with `ProjectStatusIndex` and `StatusIndex` GSIs. This repository preserves that protocol; it does not create a table, provision AWS, or migrate records.
 
-Keep AWS credentials outside source control. The runtime identity needs only the access required for the capability it uses. A read-only plugin installation needs `dynamodb:GetItem` and `dynamodb:Query` on the table and its indexes.
+Keep AWS credentials outside source control. The runtime identity needs only the access required for the capability it uses. A read-only installation needs `dynamodb:GetItem` and `dynamodb:Query`; lifecycle tools additionally need the tightly scoped DynamoDB write actions required by FleetMind's conditional task transitions.
 
 ## Use `delegation-core` from a Node.js service
 
@@ -54,12 +54,18 @@ const active = await reader.listByStatus({
 
 ## Install the OpenClaw plugin package
 
-The OpenClaw plugin package is not published yet. Install it from this repository checkout:
+Before the first beta is published, install the plugin from this repository checkout:
 
 ```bash
 npm ci
 npm run build
 openclaw plugins install ./packages/openclaw-plugin
+```
+
+After the sandbox beta is published, install its exact version from npm:
+
+```bash
+openclaw plugins install npm:@continuous-agentics/openclaw-delegation-plugin@0.1.0-beta.1
 ```
 
 The install command registers the package's manifest ID, `fleetmind-delegation`. Configure that plugin ID in OpenClaw's configuration, replacing `your-fleet-tasks` and the region with the values from the FleetMind deployment:
@@ -80,14 +86,11 @@ The install command registers the package's manifest ID, `fleetmind-delegation`.
 }
 ```
 
-`awsRegion` is optional when `AWS_REGION` or `AWS_DEFAULT_REGION` is set. Restart the gateway after changing plugin configuration.
+`awsRegion` is optional when `AWS_REGION` or `AWS_DEFAULT_REGION` is set. Configure a `workerAgentIds` binding for each worker agent and configure `reviewerAgentIds` with only designated human-reviewer agent IDs before allowlisting sign-off or merge. Restart the gateway after changing plugin configuration.
 
-The plugin currently exposes only:
+The plugin exposes task reads plus guarded `ack`, `ship`, `block`, `signoff`, and `merge` lifecycle tools. Worker transitions require an `workerAgentIds` binding; sign-off and merge fail closed unless the caller appears in `reviewerAgentIds`. It does not create tasks.
 
-- `fleetmind_task_get` — retrieve one eight-character task ID;
-- `fleetmind_task_list_active` — list delegated, accepted, shipped, signed-off, and blocked tasks, optionally scoped to a project.
-
-It does not create or mutate tasks, subscribe to terminal events, or send Slack or Discord messages. Those capabilities are planned follow-on work.
+Optional `delegationEvents` and `terminalEvents` subscribers preserve FleetMind's NATS event contract, derive routing from the authoritative ledger, and post best-effort Slack receipts. Discord delivery remains out of scope. Configure and validate those subscribers only through the [sandbox runbook](plugin-sandbox-runbook.md) before using the beta.
 
 ## Minimal read-only IAM policy
 
@@ -109,14 +112,15 @@ Use a least-privilege policy for the OpenClaw plugin's runtime identity. Replace
 }
 ```
 
-This is sufficient for the plugin's current read-only tools. Do not grant write actions until a future plugin version explicitly supports lifecycle mutations.
+This policy is sufficient for a read-only installation. Lifecycle tools need the least-privilege DynamoDB write actions already granted by FleetMind's worker and reviewer roles; do not grant them to a read-only agent.
 
 ## Verify an installation
 
 1. Confirm the plugin loads with its configured table name and AWS region.
 2. Call `fleetmind_task_list_active` with a small limit.
 3. Call `fleetmind_task_get` for a known task ID.
-4. Verify a least-privilege runtime identity cannot mutate the table.
+4. Verify a read-only runtime identity cannot mutate the table.
+5. For lifecycle or Slack/NATS behavior, complete the focused smoke, recovery, rollback, and end-to-end checks in the [sandbox runbook](plugin-sandbox-runbook.md).
 
 ## Troubleshooting
 

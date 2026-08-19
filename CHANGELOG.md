@@ -5,7 +5,7 @@ All notable changes to this repository are documented here. This monorepo contai
 | Package | Release-tag prefix | Publication status |
 | --- | --- | --- |
 | `@continuous-agentics/delegation-core` | `delegation-core-v` | Published to npm |
-| `@continuous-agentics/openclaw-delegation-plugin` | `openclaw-delegation-plugin-v` | Package source exists; npm publishing workflow is not enabled yet |
+| `@continuous-agentics/openclaw-delegation-plugin` | `openclaw-delegation-plugin-v` | Release automation ready; not yet published |
 
 This project follows [Semantic Versioning](https://semver.org/). Release notes complement this changelog when a release is published.
 
@@ -20,7 +20,13 @@ This project follows [Semantic Versioning](https://semver.org/). Release notes c
 
 ### Unreleased
 
-- Initial package source and OpenClaw manifest. The package is built and tested in this monorepo, but has not been published to npm.
+## [openclaw-delegation-plugin-v0.1.0-beta.1] - Unreleased
+
+### Added
+
+- Initial package source and OpenClaw manifest, including native task lifecycle tools, NATS terminal-event handling, and Slack delegation delivery.
+- Package-specific draft-release and npm Trusted Publishing workflows for the first sandbox beta.
+- Sandbox acceptance and rollback runbook, including the required recovery procedure for a task claimed before a failed worker wake.
 
 ## `@continuous-agentics/delegation-core`
 
@@ -49,3 +55,4 @@ This project follows [Semantic Versioning](https://semver.org/). Release notes c
 [delegation-core-v0.1.2]: https://github.com/Continuous-Agentics/fleetmind-delegation/compare/delegation-core-v0.1.1...delegation-core-v0.1.2
 [delegation-core-v0.1.1]: https://github.com/Continuous-Agentics/fleetmind-delegation/compare/delegation-core-v0.1.0...delegation-core-v0.1.1
 [delegation-core-v0.1.0]: https://github.com/Continuous-Agentics/fleetmind-delegation/releases/tag/delegation-core-v0.1.0
+[openclaw-delegation-plugin-v0.1.0-beta.1]: https://github.com/Continuous-Agentics/fleetmind-delegation/releases/tag/openclaw-delegation-plugin-v0.1.0-beta.1
