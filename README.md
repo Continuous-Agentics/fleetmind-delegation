@@ -2,13 +2,13 @@
 
 This repository is the source monorepo for the FleetMind delegation protocol and its OpenClaw integration. The root workspace is not itself published; it contains two independently versioned npm packages: the published runtime and the OpenClaw plugin package.
 
-Start with the [consumer and onboarding guide](docs/consumer-onboarding.md) to choose the right component and configure it safely. Contributors should read [CONTRIBUTING.md](CONTRIBUTING.md), and maintainers should use [RELEASING.md](RELEASING.md).
+Start with the [consumer and onboarding guide](docs/consumer-onboarding.md) to choose the right component and configure it safely. The plugin README explains the required OpenClaw configuration that must be populated before use, along with the planned FleetMind-generated configuration path. Contributors should read [CONTRIBUTING.md](CONTRIBUTING.md), and maintainers should use [RELEASING.md](RELEASING.md).
 
 ## Components
 
 - [`@continuous-agentics/fleetmind`](https://www.npmjs.com/package/@continuous-agentics/fleetmind) is the fleet operator package. It deploys and manages OpenClaw multi-agent fleets, including delegation infrastructure.
 - [`@continuous-agentics/delegation-core`](packages/delegation-core) is the published Node.js runtime package. It contains the versioned task, lifecycle, delivery-context, DynamoDB ledger/read, and NATS adapters that preserve the FleetMind delegation protocol.
-- [`@continuous-agentics/openclaw-fleetmind-delegation`](packages/openclaw-plugin) is the separately versioned OpenClaw plugin package in this repository. Its manifest ID is `fleetmind-delegation`; it provides task lifecycle tools and is published as a beta. Until `latest` is promoted from the incompatible `0.1.0-beta.1`, install with the `beta` dist-tag or an exact beta version.
+- [`@continuous-agentics/openclaw-fleetmind-delegation`](packages/openclaw-plugin) is the separately versioned OpenClaw plugin package in this repository. Its manifest ID is `fleetmind-delegation`; it provides guarded task lifecycle tools, NATS subscribers, and Slack receipt delivery. It is published as a beta; until `latest` is promoted from incompatible `0.1.0-beta.1`, install with the `beta` dist-tag or an exact beta version.
 
 ## Scope of the initial scaffold
 
