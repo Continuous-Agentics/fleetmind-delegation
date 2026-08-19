@@ -1,4 +1,4 @@
-# `@continuous-agentics/openclaw-delegation-plugin`
+# `@continuous-agentics/openclaw-fleetmind-delegation`
 
 This is the OpenClaw plugin package in the FleetMind Delegation monorepo. It is distinct from both the root monorepo package and [`@continuous-agentics/delegation-core`](../delegation-core): the core package is the published Node.js delegation runtime, while this package provides the OpenClaw integration layer.
 
@@ -36,7 +36,7 @@ openclaw plugins install ./packages/openclaw-plugin
 After the sandbox beta is published, install its exact version from npm:
 
 ```bash
-openclaw plugins install npm:@continuous-agentics/openclaw-delegation-plugin@0.1.0-beta.1
+openclaw plugins install npm:@continuous-agentics/openclaw-fleetmind-delegation@0.1.0-beta.1
 ```
 
 The command registers the plugin manifest ID, `fleetmind-delegation`.

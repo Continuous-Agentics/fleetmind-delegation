@@ -22,4 +22,4 @@ jobs:
       - run: npm run build
       - run: npm test
       - run: npm pack --dry-run --workspace @continuous-agentics/delegation-core
-      - run: npm pack --dry-run --workspace @continuous-agentics/openclaw-delegation-plugin
+      - run: npm pack --dry-run --workspace @continuous-agentics/openclaw-fleetmind-delegation

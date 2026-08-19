@@ -20,7 +20,7 @@ jobs:
     name: Build & publish OpenClaw delegation plugin
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    if: github.actor == 'ggettert' && startsWith(github.event.release.tag_name, 'openclaw-delegation-plugin-v')
+    if: github.actor == 'ggettert' && startsWith(github.event.release.tag_name, 'openclaw-fleetmind-delegation-v')
     permissions:
       id-token: write
       contents: read
@@ -52,7 +52,7 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${TARGET_TAG}"
-          VERSION="${TAG#openclaw-delegation-plugin-v}"
+          VERSION="${TAG#openclaw-fleetmind-delegation-v}"
           PACKAGE_VERSION="$(node -p "require('./packages/openclaw-plugin/package.json').version")"
           if [[ "$TAG" == "$VERSION" || "$VERSION" != "$PACKAGE_VERSION" ]]; then
             echo "::error::Tag/version mismatch: tag=$TAG package.json=$PACKAGE_VERSION"
@@ -73,15 +73,15 @@ jobs:
         run: |
           set -euo pipefail
           TMPDIR="$(mktemp -d)"
-          npm pack --workspace @continuous-agentics/openclaw-delegation-plugin --pack-destination "$TMPDIR"
+          npm pack --workspace @continuous-agentics/openclaw-fleetmind-delegation --pack-destination "$TMPDIR"
           mkdir -p "$TMPDIR/install"
           cd "$TMPDIR/install"
           npm init -y >/dev/null
           npm install "$TMPDIR"/*.tgz
-          test -f node_modules/@continuous-agentics/openclaw-delegation-plugin/openclaw.plugin.json
+          test -f node_modules/@continuous-agentics/openclaw-fleetmind-delegation/openclaw.plugin.json
 
       - name: Publish
         run: |
           unset NODE_AUTH_TOKEN
           unset NPM_TOKEN
-          npm publish --workspace @continuous-agentics/openclaw-delegation-plugin --access public --tag "${{ steps.release.outputs.npm_tag }}" --provenance
+          npm publish --workspace @continuous-agentics/openclaw-fleetmind-delegation --access public --tag "${{ steps.release.outputs.npm_tag }}" --provenance

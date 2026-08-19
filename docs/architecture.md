@@ -7,7 +7,7 @@ FleetMind Delegation separates a stable delegation protocol from the systems tha
 | Component | Owns | Does not own |
 | --- | --- | --- |
 | `@continuous-agentics/delegation-core` | Versioned task contracts, DynamoDB readers/lifecycle writer, NATS task-event transport | AWS provisioning, channel delivery, OpenClaw tool registration |
-| `@continuous-agentics/openclaw-delegation-plugin` | OpenClaw-facing task tools and plugin configuration | Fleet provisioning and arbitrary direct DynamoDB writes |
+| `@continuous-agentics/openclaw-fleetmind-delegation` | OpenClaw-facing task tools and plugin configuration | Fleet provisioning and arbitrary direct DynamoDB writes |
 | [FleetMind](https://github.com/Continuous-Agentics/fleetmind) | Fleet configuration, infrastructure, templates, operator workflows, and legacy channel behavior | Publishing this protocol package |
 
 ## Durable state and notifications

@@ -21,7 +21,7 @@ Maintainers may clone the upstream repository directly.
 This is an npm-workspace monorepo with two independently versioned packages:
 
 - `packages/delegation-core` → `@continuous-agentics/delegation-core`, the published compatibility runtime.
-- `packages/openclaw-plugin` → `@continuous-agentics/openclaw-delegation-plugin`, the OpenClaw integration boundary. Its package source is versioned and tested here; npm publishing is not enabled yet.
+- `packages/openclaw-plugin` → `@continuous-agentics/openclaw-fleetmind-delegation`, the OpenClaw integration boundary. Its package source is versioned and tested here; npm publishing is not enabled yet.
 
 ## Tests and compatibility
 
@@ -69,4 +69,4 @@ Keep unrelated refactors out of protocol or security fixes. Never commit credent
 
 ## Releases
 
-Releases are maintainer-only. Each package has an independent version and package-scoped changelog section. `delegation-core` uses tags such as `delegation-core-v0.1.3`; the plugin uses `openclaw-delegation-plugin-v0.1.0-beta.1`. A package-specific tag creates a draft GitHub Release, and publication of that release is the deliberate npm Trusted Publishing gate. Read [RELEASING.md](RELEASING.md) before preparing either package for release.
+Releases are maintainer-only. Each package has an independent version and package-scoped changelog section. `delegation-core` uses tags such as `delegation-core-v0.1.3`; the plugin uses `openclaw-fleetmind-delegation-v0.1.0-beta.1`. A package-specific tag creates a draft GitHub Release, and publication of that release is the deliberate npm Trusted Publishing gate. Read [RELEASING.md](RELEASING.md) before preparing either package for release.

@@ -30,7 +30,7 @@ import {
   type TaskSummary,
 } from "@continuous-agentics/delegation-core";
 
-export const pluginPackageName = "@continuous-agentics/openclaw-delegation-plugin";
+export const pluginPackageName = "@continuous-agentics/openclaw-fleetmind-delegation";
 export const ACTIVE_TASK_STATUSES: TaskStatus[] = [
   "delegated",
   "accepted",
