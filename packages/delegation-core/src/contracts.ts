@@ -29,9 +29,9 @@ export const DeliveryContextSchema = z.object({
 export type DeliveryContext = z.infer<typeof DeliveryContextSchema>;
 
 /**
- * A durable terminal-notification outbox, stored with its task record.
- * The lifecycle update and this record are one DynamoDB item update, so a
- * worker crash cannot leave a shipped/blocked task with no event to relay.
+ * A durable terminal-notification outbox record, stored separately from its
+ * task record. Both are written in one DynamoDB transaction, so a worker
+ * crash cannot leave a shipped/blocked task with no event to relay.
  */
 export const TerminalEventOutboxSchema = z.object({
   event: z.enum(["ship", "block"]),

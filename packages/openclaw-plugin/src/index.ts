@@ -423,14 +423,18 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
         };
         let nextDelayMs = TERMINAL_RECONCILE_INITIAL_MS;
         const scheduleReconcile = (delayMs: number): void => {
+          if (generation !== terminalEventGeneration) return;
           terminalReconcileTimer = setTimeout(() => {
             terminalReconcileTimer = undefined;
+            if (generation !== terminalEventGeneration) return;
             void reconcile()
               .then((outcome) => {
+                if (generation !== terminalEventGeneration) return;
                 nextDelayMs = nextTerminalReconcileDelay(nextDelayMs, outcome);
                 scheduleReconcile(nextDelayMs);
               })
               .catch((error) => {
+                if (generation !== terminalEventGeneration) return;
                 ctx.logger.error(`FleetMind terminal reconciliation failed: ${String(error)}`);
                 nextDelayMs = nextTerminalReconcileDelay(nextDelayMs, "error");
                 scheduleReconcile(nextDelayMs);

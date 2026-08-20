@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
+import { ConditionalCheckFailedException, TransactionCanceledException } from "@aws-sdk/client-dynamodb";
 import { TaskConditionError, TaskLedger } from "../src/index.js";
 
 const record = {
@@ -104,6 +104,26 @@ test("TaskLedger translates conditional-write failures to non-retryable lifecycl
   await assert.rejects(
     () => ledger.shipTask("deadbeef", "forge", "fleetmind"),
     (error: unknown) => error instanceof TaskConditionError && error.message.includes("accepted→shipped"),
+  );
+});
+
+test("TaskLedger translates only conditional transaction cancellations to lifecycle errors", async () => {
+  const conditionFailure = new TransactionCanceledException({
+    $metadata: {}, message: "condition failed", CancellationReasons: [{ Code: "ConditionalCheckFailed" }],
+  });
+  const conditionLedger = new TaskLedger({ tableName: "tasks", documentClient: { send: async () => { throw conditionFailure; } } as never });
+  await assert.rejects(
+    () => conditionLedger.shipTask("deadbeef", "forge", "fleetmind"),
+    (error: unknown) => error instanceof TaskConditionError,
+  );
+
+  const transientFailure = new TransactionCanceledException({
+    $metadata: {}, message: "transaction conflict", CancellationReasons: [{ Code: "TransactionConflict" }],
+  });
+  const transientLedger = new TaskLedger({ tableName: "tasks", documentClient: { send: async () => { throw transientFailure; } } as never });
+  await assert.rejects(
+    () => transientLedger.shipTask("deadbeef", "forge", "fleetmind"),
+    (error: unknown) => error === transientFailure,
   );
 });
 

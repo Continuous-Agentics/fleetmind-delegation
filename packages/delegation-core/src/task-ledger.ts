@@ -88,7 +88,12 @@ function todayUTC(): string {
  * real network/service error. Returns true only for ConditionalCheckFailed.
  */
 function isConditionFailed(err: unknown): boolean {
-  return err instanceof ConditionalCheckFailedException || err instanceof TransactionCanceledException;
+  if (err instanceof ConditionalCheckFailedException) return true;
+  // A transaction can also be cancelled for transient conflicts, throttling,
+  // validation, or service failures. Only translate an actual failed
+  // ConditionExpression into a lifecycle-state error.
+  return err instanceof TransactionCanceledException
+    && err.CancellationReasons?.some((reason) => reason.Code === "ConditionalCheckFailed") === true;
 }
 
 // ── Main class ────────────────────────────────────────────────────────────────
