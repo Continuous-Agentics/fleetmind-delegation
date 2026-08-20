@@ -23,16 +23,16 @@ test("terminal lifecycle action publishes a best-effort fast-path event after it
   const calls: string[] = [];
   const ledger = {
     ackTask: async () => {},
-    shipTask: async (taskId: string) => { calls.push(`ship:${taskId}`); },
+    shipTask: async (taskId: string) => { calls.push(`ship:${taskId}`); return { at: "2026-08-20T16:00:00Z" }; },
     blockTask: async () => {},
     signoffTask: async () => {},
     mergeTask: async () => {},
   };
   const result = await runLifecycleAction(ledger, "ship", { taskId: "deadbeef", worker: "vesper" }, {
-    publishTerminalEvent: async (taskId, event) => { calls.push(`publish:${taskId}:${event}`); },
+    publishTerminalEvent: async (taskId, event, at) => { calls.push(`publish:${taskId}:${event}:${at}`); },
   });
   assert.equal(result, "Shipped FleetMind task deadbeef.");
-  assert.deepEqual(calls, ["ship:deadbeef", "publish:deadbeef:ship"]);
+  assert.deepEqual(calls, ["ship:deadbeef", "publish:deadbeef:ship:2026-08-20T16:00:00Z"]);
 });
 
 test("terminal lifecycle action preserves the durable transition when the fast path fails", async () => {
@@ -40,13 +40,13 @@ test("terminal lifecycle action preserves the durable transition when the fast p
   const ledger = {
     ackTask: async () => {},
     shipTask: async () => {},
-    blockTask: async () => {},
+    blockTask: async () => ({ at: "2026-08-20T16:00:00Z" }),
     signoffTask: async () => {},
     mergeTask: async () => {},
   };
   const result = await runLifecycleAction(ledger, "block", { taskId: "deadbeef", worker: "vesper" }, {
     publishTerminalEvent: async () => { throw new Error("NATS unavailable"); },
-    onTerminalPublishError: (_taskId, _event, error) => failures.push((error as Error).message),
+    onTerminalPublishError: (_taskId, _event, _at, error) => failures.push((error as Error).message),
   });
   assert.equal(result, "Blocked FleetMind task deadbeef.");
   assert.deepEqual(failures, ["NATS unavailable"]);

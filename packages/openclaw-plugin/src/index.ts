@@ -55,16 +55,16 @@ interface PluginConfig {
 
 export interface LifecycleTaskLedger {
   ackTask(taskId: string, worker: string): Promise<void>;
-  shipTask(taskId: string, worker: string): Promise<void>;
-  blockTask(taskId: string, worker: string): Promise<void>;
+  shipTask(taskId: string, worker: string): Promise<{ at: string } | void>;
+  blockTask(taskId: string, worker: string): Promise<{ at: string } | void>;
   signoffTask(taskId: string): Promise<void>;
   mergeTask(taskId: string): Promise<void>;
 }
 
 export interface LifecycleActionCallbacks {
   /** Best-effort low-latency notification after a durable terminal transition. */
-  publishTerminalEvent?: (taskId: string, event: "ship" | "block") => Promise<void>;
-  onTerminalPublishError?: (taskId: string, event: "ship" | "block", error: unknown) => void;
+  publishTerminalEvent?: (taskId: string, event: "ship" | "block", at: string) => Promise<void>;
+  onTerminalPublishError?: (taskId: string, event: "ship" | "block", at: string, error: unknown) => void;
 }
 
 export type LifecycleAction = "ack" | "ship" | "block" | "signoff" | "merge";
@@ -214,19 +214,23 @@ export async function runLifecycleAction(
       await ledger.ackTask(params.taskId, params.worker!);
       return `Acknowledged FleetMind task ${params.taskId}.`;
     case "ship":
-      await ledger.shipTask(params.taskId, params.worker!);
-      try {
-        await callbacks.publishTerminalEvent?.(params.taskId, "ship");
-      } catch (error) {
-        callbacks.onTerminalPublishError?.(params.taskId, "ship", error);
+      {
+        const transition = await ledger.shipTask(params.taskId, params.worker!);
+        if (transition?.at) try {
+          await callbacks.publishTerminalEvent?.(params.taskId, "ship", transition.at);
+        } catch (error) {
+          callbacks.onTerminalPublishError?.(params.taskId, "ship", transition.at, error);
+        }
       }
       return `Shipped FleetMind task ${params.taskId}.`;
     case "block":
-      await ledger.blockTask(params.taskId, params.worker!);
-      try {
-        await callbacks.publishTerminalEvent?.(params.taskId, "block");
-      } catch (error) {
-        callbacks.onTerminalPublishError?.(params.taskId, "block", error);
+      {
+        const transition = await ledger.blockTask(params.taskId, params.worker!);
+        if (transition?.at) try {
+          await callbacks.publishTerminalEvent?.(params.taskId, "block", transition.at);
+        } catch (error) {
+          callbacks.onTerminalPublishError?.(params.taskId, "block", transition.at, error);
+        }
       }
       return `Blocked FleetMind task ${params.taskId}.`;
     case "signoff":
@@ -283,13 +287,13 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
       })();
       return ledger;
     };
-    const publishTerminalEvent = async (taskId: string, event: "ship" | "block"): Promise<void> => {
+    const publishTerminalEvent = async (taskId: string, event: "ship" | "block", at: string): Promise<void> => {
       // Worker plugin instances already have this transport configuration for
       // delegation receipt. A successful publish is only a fast path: the
       // transactional outbox remains responsible for eventual delivery.
       const config = getConfig().delegationEvents;
       if (!config) return;
-      const outbox = await getLedger().getTerminalEventOutbox(taskId, event);
+      const outbox = await getLedger().getTerminalEventOutbox(taskId, event, at);
       if (!outbox) throw new Error(`Terminal outbox event is missing for ${taskId}/${event}.`);
       lifecycleTerminalPublisher ??= new NatsTaskEvents({
         servers: config.natsServers,
@@ -332,11 +336,11 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
             const terminalEvent = event.event as "ship" | "block";
             const leaseId = randomUUID();
             const leaseMs = api.runtime.agent.resolveAgentTimeoutMs({ cfg: ctx.config }) + 30_000;
-            const claimed = await getLedger().claimTerminalEventDelivery(event.task_id, terminalEvent, leaseId, leaseMs);
+            const claimed = await getLedger().claimTerminalEventDelivery(event.task_id, terminalEvent, event.at, leaseId, leaseMs);
             if (!claimed) {
               // Compatibility for terminal events produced by older FleetMind
               // senders, which predate the standalone outbox record.
-              const outbox = await getLedger().getTerminalEventOutbox(event.task_id, terminalEvent);
+              const outbox = await getLedger().getTerminalEventOutbox(event.task_id, terminalEvent, event.at);
               if (outbox) return;
             }
             const delivered = await handleTerminalTaskEvent(event as typeof event & { event: "ship" | "block" }, {
@@ -387,8 +391,8 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
             onInfo: (message) => ctx.logger.info(message),
           });
             if (claimed) {
-              if (delivered) await getLedger().completeTerminalEventDelivery(event.task_id, terminalEvent, leaseId);
-              else await getLedger().releaseTerminalEventDelivery(event.task_id, terminalEvent, leaseId);
+              if (delivered) await getLedger().completeTerminalEventDelivery(event.task_id, terminalEvent, event.at, leaseId);
+              else await getLedger().releaseTerminalEventDelivery(event.task_id, terminalEvent, event.at, leaseId);
             }
           };
           const tracked = deliver().catch(async (error) => {
@@ -615,7 +619,7 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
         async execute(_id, rawParams) {
           const text = await runLifecycleAction(getLedger(), action, rawParams as LifecycleToolParams, {
             publishTerminalEvent: action === "ship" || action === "block" ? publishTerminalEvent : undefined,
-            onTerminalPublishError: (taskId, event, error) => {
+            onTerminalPublishError: (taskId, event, _at, error) => {
               // The state change and outbox are already durable. Do not report
               // a completed lifecycle transition as failed just because the
               // optional low-latency delivery attempt was unavailable.

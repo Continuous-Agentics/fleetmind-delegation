@@ -50,6 +50,7 @@ export type TerminalEventOutbox = z.infer<typeof TerminalEventOutboxSchema>;
 export const TerminalEventOutboxRecordSchema = TerminalEventOutboxSchema.extend({
   PK: z.string(),
   GSI2PK: z.string(),
+  delegated_at: z.string(),
   task_id: z.string().regex(/^[0-9a-f]{8}$/),
   project: z.string(),
   delegated_by: z.string(),

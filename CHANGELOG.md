@@ -50,6 +50,12 @@ This project follows [Semantic Versioning](https://semver.org/). Release notes c
 
 ## `@continuous-agentics/delegation-core`
 
+## [delegation-core-v0.1.4] - Unreleased
+
+### Fixed
+
+- Add durable terminal-event outbox records and lifecycle transition support required by the delegation plugin's terminal delivery path.
+
 ## [delegation-core-v0.1.3] - Unreleased
 
 ### Fixed
