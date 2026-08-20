@@ -20,12 +20,13 @@ This project follows [Semantic Versioning](https://semver.org/). Release notes c
 
 ### Unreleased
 
-## [openclaw-fleetmind-delegation-v0.1.0-beta.5] - Unreleased
+## [openclaw-fleetmind-delegation-v0.1.0-beta.6] - Unreleased
 
 ### Fixed
 
 - Declare the exact OpenClaw-managed AWS SDK peer set so the plugin install root resolves a compatible DynamoDB runtime.
 - Persist terminal `ship`/`block` notifications in a durable DynamoDB outbox and reconcile them through NATS, preventing a worker-side crash from silently losing the PM wake.
+- Use a per-transition UUID for outbox identity, so repeated terminal events in the same clock second cannot collide.
 
 ## [openclaw-fleetmind-delegation-v0.1.0-beta.4] - Unreleased
 

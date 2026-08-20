@@ -30,6 +30,7 @@ import {
   type QueryCommandInput,
 } from "@aws-sdk/lib-dynamodb";
 import { readFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import {
   TaskRecord,
   TaskRecordSchema,
@@ -213,8 +214,9 @@ export class TaskLedger {
    *
    * `project` is optional — if omitted, fetched via GetItem first.
    */
-  async shipTask(taskId: string, worker: string, project?: string): Promise<{ at: string }> {
+  async shipTask(taskId: string, worker: string, project?: string): Promise<{ at: string; terminalEventId: string }> {
     const now = nowISO();
+    const terminalEventId = randomUUID();
     const proj = project ?? (await this._getProject(taskId));
     await this._updateStatus(taskId, {
       updateExpression: "SET #st = :shipped, shipped_at = :now, GSI1PK = :gsi1pk, GSI2PK = :gsi2pk",
@@ -222,8 +224,8 @@ export class TaskLedger {
       expressionAttributeNames: { "#st": "status", "#worker": "worker" },
       expressionAttributeValues: { ":shipped": "shipped", ":accepted": "accepted", ":worker": worker, ":now": now, ":gsi1pk": gsi1pk(proj, "shipped"), ":gsi2pk": gsi2pk("shipped") },
       errorContext: "ship (accepted→shipped)",
-    }, this._terminalOutboxRecord(taskId, "ship", now, worker, proj));
-    return { at: now };
+    }, this._terminalOutboxRecord(taskId, "ship", terminalEventId, now, worker, proj));
+    return { at: now, terminalEventId };
   }
 
   /**
@@ -232,8 +234,9 @@ export class TaskLedger {
    *
    * `project` is optional — if omitted, fetched via GetItem first.
    */
-  async blockTask(taskId: string, worker: string, project?: string): Promise<{ at: string }> {
+  async blockTask(taskId: string, worker: string, project?: string): Promise<{ at: string; terminalEventId: string }> {
     const now = nowISO();
+    const terminalEventId = randomUUID();
     const proj = project ?? (await this._getProject(taskId));
     await this._updateStatus(taskId, {
       updateExpression:
@@ -252,8 +255,8 @@ export class TaskLedger {
         ":gsi2pk": gsi2pk("blocked"),
       },
       errorContext: "block (delegated|accepted→blocked)",
-    }, this._terminalOutboxRecord(taskId, "block", now, worker, proj));
-    return { at: now };
+    }, this._terminalOutboxRecord(taskId, "block", terminalEventId, now, worker, proj));
+    return { at: now, terminalEventId };
   }
 
   /**
@@ -578,8 +581,8 @@ export class TaskLedger {
       .sort((a, b) => a.at.localeCompare(b.at)).slice(0, limit);
   }
 
-  async getTerminalEventOutbox(taskId: string, event: TerminalEventOutbox["event"], at: string): Promise<TerminalEventOutboxRecord | undefined> {
-    const result = await this.doc.send(new GetCommand({ TableName: this.table, Key: { PK: this._outboxPK(taskId, event, at) } }));
+  async getTerminalEventOutbox(taskId: string, event: TerminalEventOutbox["event"], terminalEventId: string): Promise<TerminalEventOutboxRecord | undefined> {
+    const result = await this.doc.send(new GetCommand({ TableName: this.table, Key: { PK: this._outboxPK(taskId, event, terminalEventId) } }));
     return result.Item ? TerminalEventOutboxRecordSchema.parse(result.Item) : undefined;
   }
 
@@ -588,7 +591,7 @@ export class TaskLedger {
   async claimTerminalEventDelivery(
     taskId: string,
     event: TerminalEventOutbox["event"],
-    at: string,
+    terminalEventId: string,
     leaseId: string,
     leaseMs = 60_000,
   ): Promise<boolean> {
@@ -597,7 +600,7 @@ export class TaskLedger {
     try {
       await this.doc.send(new UpdateCommand({
         TableName: this.table,
-        Key: { PK: this._outboxPK(taskId, event, at) },
+        Key: { PK: this._outboxPK(taskId, event, terminalEventId) },
         UpdateExpression: "SET #delivery_status = :delivering, GSI2PK = :gsi, lease_id = :lease_id, lease_expires_at = :lease_expires_at, delivery_attempts = if_not_exists(delivery_attempts, :zero) + :one",
         ConditionExpression: "event = :event AND (delivery_status = :pending OR (delivery_status = :delivering AND lease_expires_at < :now))",
         ExpressionAttributeNames: {
@@ -615,11 +618,11 @@ export class TaskLedger {
     }
   }
 
-  async completeTerminalEventDelivery(taskId: string, event: TerminalEventOutbox["event"], at: string, leaseId: string): Promise<boolean> {
+  async completeTerminalEventDelivery(taskId: string, event: TerminalEventOutbox["event"], terminalEventId: string, leaseId: string): Promise<boolean> {
     try {
       await this.doc.send(new UpdateCommand({
         TableName: this.table,
-        Key: { PK: this._outboxPK(taskId, event, at) },
+        Key: { PK: this._outboxPK(taskId, event, terminalEventId) },
         UpdateExpression: "SET #delivery_status = :delivered, GSI2PK = :gsi, delivered_at = :now REMOVE lease_id, lease_expires_at",
         ConditionExpression: "delivery_status = :delivering AND lease_id = :lease_id",
         ExpressionAttributeNames: {
@@ -634,11 +637,11 @@ export class TaskLedger {
     }
   }
 
-  async releaseTerminalEventDelivery(taskId: string, event: TerminalEventOutbox["event"], at: string, leaseId: string): Promise<void> {
+  async releaseTerminalEventDelivery(taskId: string, event: TerminalEventOutbox["event"], terminalEventId: string, leaseId: string): Promise<void> {
     try {
       await this.doc.send(new UpdateCommand({
         TableName: this.table,
-        Key: { PK: this._outboxPK(taskId, event, at) },
+        Key: { PK: this._outboxPK(taskId, event, terminalEventId) },
         UpdateExpression: "SET #delivery_status = :pending, GSI2PK = :gsi REMOVE lease_id, lease_expires_at",
         ConditionExpression: "delivery_status = :delivering AND lease_id = :lease_id",
         ExpressionAttributeNames: {
@@ -717,13 +720,14 @@ export class TaskLedger {
     return item.project;
   }
 
-  private _outboxPK(taskId: string, event: TerminalEventOutbox["event"], at: string): string {
-    return `OUTBOX#TASK#${taskId}#${event}#${at}`;
+  private _outboxPK(taskId: string, event: TerminalEventOutbox["event"], terminalEventId: string): string {
+    return `OUTBOX#TASK#${taskId}#${event}#${terminalEventId}`;
   }
 
-  private _terminalOutboxRecord(taskId: string, event: TerminalEventOutbox["event"], at: string, worker: string, project: string): TerminalEventOutboxRecord {
+  private _terminalOutboxRecord(taskId: string, event: TerminalEventOutbox["event"], terminalEventId: string, at: string, worker: string, project: string): TerminalEventOutboxRecord {
     return {
-      PK: this._outboxPK(taskId, event, at), GSI2PK: "OUTBOX#PENDING", delegated_at: at, task_id: taskId,
+      PK: this._outboxPK(taskId, event, terminalEventId), GSI2PK: "OUTBOX#PENDING", delegated_at: at, task_id: taskId,
+      terminal_event_id: terminalEventId,
       project, delegated_by: "", event, at, worker, delivery_status: "pending", delivery_attempts: 0,
       expires_at: expiresAt365(),
     };

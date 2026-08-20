@@ -34,6 +34,7 @@ export type DeliveryContext = z.infer<typeof DeliveryContextSchema>;
  * crash cannot leave a shipped/blocked task with no event to relay.
  */
 export const TerminalEventOutboxSchema = z.object({
+  terminal_event_id: z.string().uuid(),
   event: z.enum(["ship", "block"]),
   at: z.string(),
   worker: z.string(),
@@ -175,6 +176,8 @@ export const TaskEventSchema = z.object({
   delegation_thread: z.string().optional(),
   delegation_envelope_ts: z.string().optional(),
   delivery_context: DeliveryContextSchema.optional(),
+  /** Optional to preserve FleetMind v1.0 event compatibility. */
+  terminal_event_id: z.string().uuid().optional(),
   reason: z.string().optional(),
   message: z.string().optional(),
 });

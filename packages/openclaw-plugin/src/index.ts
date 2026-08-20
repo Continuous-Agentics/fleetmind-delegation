@@ -55,16 +55,16 @@ interface PluginConfig {
 
 export interface LifecycleTaskLedger {
   ackTask(taskId: string, worker: string): Promise<void>;
-  shipTask(taskId: string, worker: string): Promise<{ at: string } | void>;
-  blockTask(taskId: string, worker: string): Promise<{ at: string } | void>;
+  shipTask(taskId: string, worker: string): Promise<{ at: string; terminalEventId: string } | void>;
+  blockTask(taskId: string, worker: string): Promise<{ at: string; terminalEventId: string } | void>;
   signoffTask(taskId: string): Promise<void>;
   mergeTask(taskId: string): Promise<void>;
 }
 
 export interface LifecycleActionCallbacks {
   /** Best-effort low-latency notification after a durable terminal transition. */
-  publishTerminalEvent?: (taskId: string, event: "ship" | "block", at: string) => Promise<void>;
-  onTerminalPublishError?: (taskId: string, event: "ship" | "block", at: string, error: unknown) => void;
+  publishTerminalEvent?: (taskId: string, event: "ship" | "block", terminalEventId: string) => Promise<void>;
+  onTerminalPublishError?: (taskId: string, event: "ship" | "block", terminalEventId: string, error: unknown) => void;
 }
 
 export type LifecycleAction = "ack" | "ship" | "block" | "signoff" | "merge";
@@ -216,20 +216,20 @@ export async function runLifecycleAction(
     case "ship":
       {
         const transition = await ledger.shipTask(params.taskId, params.worker!);
-        if (transition?.at) try {
-          await callbacks.publishTerminalEvent?.(params.taskId, "ship", transition.at);
+        if (transition?.terminalEventId) try {
+          await callbacks.publishTerminalEvent?.(params.taskId, "ship", transition.terminalEventId);
         } catch (error) {
-          callbacks.onTerminalPublishError?.(params.taskId, "ship", transition.at, error);
+          callbacks.onTerminalPublishError?.(params.taskId, "ship", transition.terminalEventId, error);
         }
       }
       return `Shipped FleetMind task ${params.taskId}.`;
     case "block":
       {
         const transition = await ledger.blockTask(params.taskId, params.worker!);
-        if (transition?.at) try {
-          await callbacks.publishTerminalEvent?.(params.taskId, "block", transition.at);
+        if (transition?.terminalEventId) try {
+          await callbacks.publishTerminalEvent?.(params.taskId, "block", transition.terminalEventId);
         } catch (error) {
-          callbacks.onTerminalPublishError?.(params.taskId, "block", transition.at, error);
+          callbacks.onTerminalPublishError?.(params.taskId, "block", transition.terminalEventId, error);
         }
       }
       return `Blocked FleetMind task ${params.taskId}.`;
@@ -287,13 +287,13 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
       })();
       return ledger;
     };
-    const publishTerminalEvent = async (taskId: string, event: "ship" | "block", at: string): Promise<void> => {
+    const publishTerminalEvent = async (taskId: string, event: "ship" | "block", terminalEventId: string): Promise<void> => {
       // Worker plugin instances already have this transport configuration for
       // delegation receipt. A successful publish is only a fast path: the
       // transactional outbox remains responsible for eventual delivery.
       const config = getConfig().delegationEvents;
       if (!config) return;
-      const outbox = await getLedger().getTerminalEventOutbox(taskId, event, at);
+      const outbox = await getLedger().getTerminalEventOutbox(taskId, event, terminalEventId);
       if (!outbox) throw new Error(`Terminal outbox event is missing for ${taskId}/${event}.`);
       lifecycleTerminalPublisher ??= new NatsTaskEvents({
         servers: config.natsServers,
@@ -307,6 +307,7 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
         worker: outbox.worker,
         delegated_by: outbox.delegated_by || undefined,
         at: outbox.at,
+        terminal_event_id: outbox.terminal_event_id,
         delegation_thread: outbox.delegation_thread,
         delivery_context: outbox.delivery_context,
       });
@@ -336,11 +337,15 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
             const terminalEvent = event.event as "ship" | "block";
             const leaseId = randomUUID();
             const leaseMs = api.runtime.agent.resolveAgentTimeoutMs({ cfg: ctx.config }) + 30_000;
-            const claimed = await getLedger().claimTerminalEventDelivery(event.task_id, terminalEvent, event.at, leaseId, leaseMs);
+            const claimed = event.terminal_event_id
+              ? await getLedger().claimTerminalEventDelivery(event.task_id, terminalEvent, event.terminal_event_id, leaseId, leaseMs)
+              : false;
             if (!claimed) {
               // Compatibility for terminal events produced by older FleetMind
               // senders, which predate the standalone outbox record.
-              const outbox = await getLedger().getTerminalEventOutbox(event.task_id, terminalEvent, event.at);
+              const outbox = event.terminal_event_id
+                ? await getLedger().getTerminalEventOutbox(event.task_id, terminalEvent, event.terminal_event_id)
+                : undefined;
               if (outbox) return;
             }
             const delivered = await handleTerminalTaskEvent(event as typeof event & { event: "ship" | "block" }, {
@@ -391,8 +396,8 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
             onInfo: (message) => ctx.logger.info(message),
           });
             if (claimed) {
-              if (delivered) await getLedger().completeTerminalEventDelivery(event.task_id, terminalEvent, event.at, leaseId);
-              else await getLedger().releaseTerminalEventDelivery(event.task_id, terminalEvent, event.at, leaseId);
+              if (delivered) await getLedger().completeTerminalEventDelivery(event.task_id, terminalEvent, event.terminal_event_id!, leaseId);
+              else await getLedger().releaseTerminalEventDelivery(event.task_id, terminalEvent, event.terminal_event_id!, leaseId);
             }
           };
           const tracked = deliver().catch(async (error) => {
@@ -419,6 +424,7 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
               worker: task.worker,
               delegated_by: task.delegated_by || undefined,
               at: task.at,
+              terminal_event_id: task.terminal_event_id,
               delegation_thread: task.delegation_thread,
               delivery_context: task.delivery_context,
             });

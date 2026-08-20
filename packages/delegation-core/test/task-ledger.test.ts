@@ -54,13 +54,21 @@ test("terminal transitions atomically persist a pending outbox record", async ()
   const items = request.TransactItems as Array<Record<string, Record<string, unknown>>>;
   assert.equal(items.length, 2);
   assert.match(String(items[0]?.Update?.UpdateExpression), /#st = :shipped/);
-  assert.deepEqual(items[1]?.Put?.Item, {
-    PK: `OUTBOX#TASK#deadbeef#ship#${(items[0]?.Update?.ExpressionAttributeValues as Record<string, unknown>)[":now"]}`, GSI2PK: "OUTBOX#PENDING",
-    delegated_at: (items[0]?.Update?.ExpressionAttributeValues as Record<string, unknown>)[":now"], task_id: "deadbeef",
-    project: "fleetmind", delegated_by: "", event: "ship", worker: "forge", delivery_status: "pending",
-    delivery_attempts: 0, at: (items[0]?.Update?.ExpressionAttributeValues as Record<string, unknown>)[":now"],
-    expires_at: (items[1]?.Put?.Item as Record<string, unknown>)["expires_at"],
-  });
+  const outbox = items[1]?.Put?.Item as Record<string, unknown>;
+  assert.match(outbox["terminal_event_id"] as string, /^[0-9a-f-]{36}$/);
+  assert.equal(outbox["PK"], `OUTBOX#TASK#deadbeef#ship#${outbox["terminal_event_id"]}`);
+  assert.equal(outbox["delegated_at"], (items[0]?.Update?.ExpressionAttributeValues as Record<string, unknown>)[":now"]);
+});
+
+test("terminal transitions use distinct UUID outbox identities even in one clock tick", async () => {
+  const requests: Array<Record<string, unknown>> = [];
+  const documentClient = { send: async (command: { input: Record<string, unknown> }) => { requests.push(command.input); } };
+  const ledger = new TaskLedger({ tableName: "tasks", documentClient: documentClient as never });
+  await ledger.blockTask("deadbeef", "forge", "fleetmind");
+  await ledger.blockTask("deadbeef", "forge", "fleetmind");
+  const outboxes = requests.map((request) => (request.TransactItems as Array<Record<string, Record<string, unknown>>>)[1]?.Put?.Item as Record<string, unknown>);
+  assert.notEqual(outboxes[0]?.["terminal_event_id"], outboxes[1]?.["terminal_event_id"]);
+  assert.notEqual(outboxes[0]?.["PK"], outboxes[1]?.["PK"]);
 });
 
 test("terminal outbox completion is idempotent", async () => {
@@ -69,9 +77,10 @@ test("terminal outbox completion is idempotent", async () => {
     send: async (command: { input: Record<string, unknown> }) => { requests.push(command.input); },
   };
   const ledger = new TaskLedger({ tableName: "tasks", documentClient: documentClient as never });
-  assert.equal(await ledger.completeTerminalEventDelivery("deadbeef", "ship", "2026-08-10T20:00:00Z", "lease"), true);
+  const eventId = "00000000-0000-4000-8000-000000000001";
+  assert.equal(await ledger.completeTerminalEventDelivery("deadbeef", "ship", eventId, "lease"), true);
   const request = requests[0]!;
-  assert.deepEqual(request.Key, { PK: "OUTBOX#TASK#deadbeef#ship#2026-08-10T20:00:00Z" });
+  assert.deepEqual(request.Key, { PK: `OUTBOX#TASK#deadbeef#ship#${eventId}` });
   assert.match(String(request.UpdateExpression), /GSI2PK = :gsi/);
   assert.equal((request.ExpressionAttributeValues as Record<string, unknown>)[":gsi"], "OUTBOX#DELIVERED");
 });
@@ -79,9 +88,9 @@ test("terminal outbox completion is idempotent", async () => {
 test("terminal outbox discovery paginates its dedicated states, independent of task status", async () => {
   const requests: Array<Record<string, unknown>> = [];
   const outbox = (id: string, state: "PENDING" | "DELIVERING", lease?: string) => ({
-    PK: `OUTBOX#TASK#${id}#ship#2026-08-10T00:00:0${id[0]}Z`, GSI2PK: `OUTBOX#${state}`,
+    PK: `OUTBOX#TASK#${id}#ship#00000000-0000-4000-8000-00000000000${id[0]}`, GSI2PK: `OUTBOX#${state}`,
     delegated_at: `2026-08-10T00:00:0${id[0]}Z`, task_id: id, project: "fleetmind",
-    delegated_by: "wren", event: "ship", at: `2026-08-10T00:00:0${id[0]}Z`, worker: "forge",
+    delegated_by: "wren", terminal_event_id: `00000000-0000-4000-8000-00000000000${id[0]}`, event: "ship", at: `2026-08-10T00:00:0${id[0]}Z`, worker: "forge",
     delivery_status: state.toLowerCase(), delivery_attempts: 0, expires_at: 1, ...(lease && { lease_expires_at: lease }),
   });
   const documentClient = { send: async (command: { input: Record<string, unknown> }) => {

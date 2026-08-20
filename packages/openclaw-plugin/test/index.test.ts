@@ -23,16 +23,16 @@ test("terminal lifecycle action publishes a best-effort fast-path event after it
   const calls: string[] = [];
   const ledger = {
     ackTask: async () => {},
-    shipTask: async (taskId: string) => { calls.push(`ship:${taskId}`); return { at: "2026-08-20T16:00:00Z" }; },
+    shipTask: async (taskId: string) => { calls.push(`ship:${taskId}`); return { at: "2026-08-20T16:00:00Z", terminalEventId: "00000000-0000-4000-8000-000000000001" }; },
     blockTask: async () => {},
     signoffTask: async () => {},
     mergeTask: async () => {},
   };
   const result = await runLifecycleAction(ledger, "ship", { taskId: "deadbeef", worker: "vesper" }, {
-    publishTerminalEvent: async (taskId, event, at) => { calls.push(`publish:${taskId}:${event}:${at}`); },
+    publishTerminalEvent: async (taskId, event, id) => { calls.push(`publish:${taskId}:${event}:${id}`); },
   });
   assert.equal(result, "Shipped FleetMind task deadbeef.");
-  assert.deepEqual(calls, ["ship:deadbeef", "publish:deadbeef:ship:2026-08-20T16:00:00Z"]);
+  assert.deepEqual(calls, ["ship:deadbeef", "publish:deadbeef:ship:00000000-0000-4000-8000-000000000001"]);
 });
 
 test("terminal lifecycle action preserves the durable transition when the fast path fails", async () => {
@@ -40,7 +40,7 @@ test("terminal lifecycle action preserves the durable transition when the fast p
   const ledger = {
     ackTask: async () => {},
     shipTask: async () => {},
-    blockTask: async () => ({ at: "2026-08-20T16:00:00Z" }),
+    blockTask: async () => ({ at: "2026-08-20T16:00:00Z", terminalEventId: "00000000-0000-4000-8000-000000000002" }),
     signoffTask: async () => {},
     mergeTask: async () => {},
   };
