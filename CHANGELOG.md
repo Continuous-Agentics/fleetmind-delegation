@@ -20,6 +20,13 @@ This project follows [Semantic Versioning](https://semver.org/). Release notes c
 
 ### Unreleased
 
+## [openclaw-fleetmind-delegation-v0.1.0-beta.7] - Unreleased
+
+### Fixed
+
+- Route terminal PM wakes through their persisted Slack delivery context after a gateway restart.
+- Send legacy terminal events without routing metadata to an explicitly configured Slack fallback instead of constructing an invalid `agent:<pm>:main` session.
+
 ## [openclaw-fleetmind-delegation-v0.1.0-beta.6] - Unreleased
 
 ### Fixed
