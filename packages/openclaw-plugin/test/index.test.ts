@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  deliveryTargetForPm,
   nextTerminalReconcileDelay,
   pluginPackageName,
   runLifecycleAction,
@@ -10,6 +11,21 @@ import {
 
 test("plugin package is wired to the workspace", () => {
   assert.equal(pluginPackageName, "@continuous-agentics/openclaw-fleetmind-delegation");
+});
+
+test("terminal routing uses persisted Slack context after a restart", () => {
+  assert.deepEqual(
+    deliveryTargetForPm("wren", { provider: "slack", accountId: "wren", conversationId: "C123", threadId: "123.456" }),
+    { channel: "slack", accountId: "wren", conversationId: "C123", threadId: "123.456", sessionKey: "agent:wren:slack:channel:c123:thread:123.456" },
+  );
+});
+
+test("terminal routing sends legacy tasks without metadata to an explicit Slack fallback", () => {
+  assert.deepEqual(
+    deliveryTargetForPm("wren", undefined, undefined, { accountId: "wren", conversationId: "C999" }),
+    { channel: "slack", accountId: "wren", conversationId: "C999", sessionKey: "agent:wren:slack:channel:c999" },
+  );
+  assert.equal(deliveryTargetForPm("wren"), undefined);
 });
 
 test("terminal reconciliation backs off when idle or failing and resets after work", () => {
