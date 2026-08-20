@@ -24,21 +24,21 @@ export interface TerminalEventDependencies {
 export async function handleTerminalTaskEvent(
   event: TerminalTaskEvent,
   deps: TerminalEventDependencies,
-): Promise<void> {
+): Promise<boolean> {
   let task: TaskRecord | undefined;
   try {
     task = await deps.ledger.getTask(event.task_id);
   } catch (error) {
     deps.onError?.(`Could not read task ${event.task_id}; refusing unverified terminal event.`, error);
-    return;
+    return false;
   }
   if (!task) {
     deps.onError?.(`Ignoring terminal event for missing task ${event.task_id}.`, new Error("Missing task."));
-    return;
+    return false;
   }
   if (task.worker !== event.worker) {
     deps.onError?.(`Ignoring terminal event for task ${event.task_id}: worker does not match the ledger record.`, new Error("Worker mismatch."));
-    return;
+    return false;
   }
 
   const message = `FleetMind terminal event received for task ${task.task_id}. Review the authoritative task ledger before taking any action.`;
@@ -52,10 +52,11 @@ export async function handleTerminalTaskEvent(
     );
   } catch (error) {
     deps.onError?.(`Could not wake PM for task ${event.task_id}.`, error);
-    return;
+    return false;
   }
 
   // Workers have already performed the conditional DDB transition. A shipped
   // task requiring sign-off must remain there for an authorized human action.
   deps.onInfo?.(`Terminal event received for authoritative task ${task.task_id}; awaiting PM review.`);
+  return true;
 }

@@ -28,6 +28,39 @@ export const DeliveryContextSchema = z.object({
 });
 export type DeliveryContext = z.infer<typeof DeliveryContextSchema>;
 
+/**
+ * A durable terminal-notification outbox record, stored separately from its
+ * task record. Both are written in one DynamoDB transaction, so a worker
+ * crash cannot leave a shipped/blocked task with no event to relay.
+ */
+export const TerminalEventOutboxSchema = z.object({
+  terminal_event_id: z.string().uuid(),
+  event: z.enum(["ship", "block"]),
+  at: z.string(),
+  worker: z.string(),
+  delivery_status: z.enum(["pending", "delivering", "delivered"]),
+  delivery_attempts: z.number().int().nonnegative().default(0),
+  lease_id: z.string().optional(),
+  lease_expires_at: z.string().optional(),
+  delivered_at: z.string().optional(),
+});
+export type TerminalEventOutbox = z.infer<typeof TerminalEventOutboxSchema>;
+
+/** Separate durable relay record. It deliberately duplicates only the safe
+ * terminal envelope fields, so discovery never depends on task status. */
+export const TerminalEventOutboxRecordSchema = TerminalEventOutboxSchema.extend({
+  PK: z.string(),
+  GSI2PK: z.string(),
+  delegated_at: z.string(),
+  task_id: z.string().regex(/^[0-9a-f]{8}$/),
+  project: z.string(),
+  delegated_by: z.string(),
+  delivery_context: DeliveryContextSchema.optional(),
+  delegation_thread: z.string().optional(),
+  expires_at: z.number(),
+});
+export type TerminalEventOutboxRecord = z.infer<typeof TerminalEventOutboxRecordSchema>;
+
 /** Current compatible DynamoDB task-record shape. */
 export const TaskRecordSchema = z.object({
   PK: z.string(),
@@ -143,6 +176,8 @@ export const TaskEventSchema = z.object({
   delegation_thread: z.string().optional(),
   delegation_envelope_ts: z.string().optional(),
   delivery_context: DeliveryContextSchema.optional(),
+  /** Optional to preserve FleetMind v1.0 event compatibility. */
+  terminal_event_id: z.string().uuid().optional(),
   reason: z.string().optional(),
   message: z.string().optional(),
 });

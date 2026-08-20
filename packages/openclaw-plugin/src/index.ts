@@ -55,10 +55,16 @@ interface PluginConfig {
 
 export interface LifecycleTaskLedger {
   ackTask(taskId: string, worker: string): Promise<void>;
-  shipTask(taskId: string, worker: string): Promise<void>;
-  blockTask(taskId: string, worker: string): Promise<void>;
+  shipTask(taskId: string, worker: string): Promise<{ at: string; terminalEventId: string } | void>;
+  blockTask(taskId: string, worker: string): Promise<{ at: string; terminalEventId: string } | void>;
   signoffTask(taskId: string): Promise<void>;
   mergeTask(taskId: string): Promise<void>;
+}
+
+export interface LifecycleActionCallbacks {
+  /** Best-effort low-latency notification after a durable terminal transition. */
+  publishTerminalEvent?: (taskId: string, event: "ship" | "block", terminalEventId: string) => Promise<void>;
+  onTerminalPublishError?: (taskId: string, event: "ship" | "block", terminalEventId: string, error: unknown) => void;
 }
 
 export type LifecycleAction = "ack" | "ship" | "block" | "signoff" | "merge";
@@ -201,16 +207,31 @@ export async function runLifecycleAction(
   ledger: LifecycleTaskLedger,
   action: LifecycleAction,
   params: LifecycleToolParams,
+  callbacks: LifecycleActionCallbacks = {},
 ): Promise<string> {
   switch (action) {
     case "ack":
       await ledger.ackTask(params.taskId, params.worker!);
       return `Acknowledged FleetMind task ${params.taskId}.`;
     case "ship":
-      await ledger.shipTask(params.taskId, params.worker!);
+      {
+        const transition = await ledger.shipTask(params.taskId, params.worker!);
+        if (transition?.terminalEventId) try {
+          await callbacks.publishTerminalEvent?.(params.taskId, "ship", transition.terminalEventId);
+        } catch (error) {
+          callbacks.onTerminalPublishError?.(params.taskId, "ship", transition.terminalEventId, error);
+        }
+      }
       return `Shipped FleetMind task ${params.taskId}.`;
     case "block":
-      await ledger.blockTask(params.taskId, params.worker!);
+      {
+        const transition = await ledger.blockTask(params.taskId, params.worker!);
+        if (transition?.terminalEventId) try {
+          await callbacks.publishTerminalEvent?.(params.taskId, "block", transition.terminalEventId);
+        } catch (error) {
+          callbacks.onTerminalPublishError?.(params.taskId, "block", transition.terminalEventId, error);
+        }
+      }
       return `Blocked FleetMind task ${params.taskId}.`;
     case "signoff":
       await ledger.signoffTask(params.taskId);
@@ -219,6 +240,21 @@ export async function runLifecycleAction(
       await ledger.mergeTask(params.taskId);
       return `Merged FleetMind task ${params.taskId}.`;
   }
+}
+
+export const TERMINAL_RECONCILE_INITIAL_MS = 30_000;
+export const TERMINAL_RECONCILE_MAX_MS = 300_000;
+
+/** Jittered exponential retry avoids synchronized relay scans across a fleet. */
+export function nextTerminalReconcileDelay(
+  previousDelayMs: number,
+  outcome: "empty" | "work" | "error",
+  random: () => number = Math.random,
+): number {
+  const base = outcome === "work"
+    ? TERMINAL_RECONCILE_INITIAL_MS
+    : Math.min(Math.max(previousDelayMs, TERMINAL_RECONCILE_INITIAL_MS) * 2, TERMINAL_RECONCILE_MAX_MS);
+  return Math.round(base * (0.8 + random() * 0.4));
 }
 
 const taskIdParameter = Type.String({ pattern: "^[0-9a-f]{8}$" });
@@ -235,6 +271,7 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
   register(api) {
     let reader: TaskReader | undefined;
     let ledger: TaskLedger | undefined;
+    let lifecycleTerminalPublisher: NatsTaskEvents | undefined;
     const getConfig = (): PluginConfig => readConfig(api.pluginConfig ?? {});
     const getReader = (): TaskReader => {
       reader ??= (() => {
@@ -250,10 +287,36 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
       })();
       return ledger;
     };
+    const publishTerminalEvent = async (taskId: string, event: "ship" | "block", terminalEventId: string): Promise<void> => {
+      // Worker plugin instances already have this transport configuration for
+      // delegation receipt. A successful publish is only a fast path: the
+      // transactional outbox remains responsible for eventual delivery.
+      const config = getConfig().delegationEvents;
+      if (!config) return;
+      const outbox = await getLedger().getTerminalEventOutbox(taskId, event, terminalEventId);
+      if (!outbox) throw new Error(`Terminal outbox event is missing for ${taskId}/${event}.`);
+      lifecycleTerminalPublisher ??= new NatsTaskEvents({
+        servers: config.natsServers,
+        subjectPrefix: config.subjectPrefix,
+      });
+      await lifecycleTerminalPublisher.publish({
+        v: "1.0",
+        event: outbox.event,
+        task_id: outbox.task_id,
+        project: outbox.project,
+        worker: outbox.worker,
+        delegated_by: outbox.delegated_by || undefined,
+        at: outbox.at,
+        terminal_event_id: outbox.terminal_event_id,
+        delegation_thread: outbox.delegation_thread,
+        delivery_context: outbox.delivery_context,
+      });
+    };
 
     let stopTerminalEvents: (() => Promise<void>) | undefined;
     let terminalEventGeneration = 0;
     let terminalHandlers = new Set<Promise<void>>();
+    let terminalReconcileTimer: ReturnType<typeof setTimeout> | undefined;
     api.registerService({
       id: "fleetmind-delegation-terminal-events",
       async start(ctx) {
@@ -262,13 +325,30 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
         if ((api.pluginConfig ?? {})["terminalEvents"] === undefined) return;
         await stopTerminalEvents?.();
         stopTerminalEvents = undefined;
+        if (terminalReconcileTimer) clearTimeout(terminalReconcileTimer);
+        terminalReconcileTimer = undefined;
         await Promise.allSettled([...terminalHandlers]);
         const generation = ++terminalEventGeneration;
         const config = getConfig().terminalEvents!;
         const transport = new NatsTaskEvents({ servers: config.natsServers, subjectPrefix: config.subjectPrefix, onError: (error) => ctx.logger.error(`FleetMind terminal NATS error: ${String(error)}`) });
         const dispose = await transport.subscribeForPm((event) => {
           if (event.event !== "ship" && event.event !== "block" || generation !== terminalEventGeneration) return;
-          const handler = handleTerminalTaskEvent(event as typeof event & { event: "ship" | "block" }, {
+          const deliver = async (): Promise<void> => {
+            const terminalEvent = event.event as "ship" | "block";
+            const leaseId = randomUUID();
+            const leaseMs = api.runtime.agent.resolveAgentTimeoutMs({ cfg: ctx.config }) + 30_000;
+            const claimed = event.terminal_event_id
+              ? await getLedger().claimTerminalEventDelivery(event.task_id, terminalEvent, event.terminal_event_id, leaseId, leaseMs)
+              : false;
+            if (!claimed) {
+              // Compatibility for terminal events produced by older FleetMind
+              // senders, which predate the standalone outbox record.
+              const outbox = event.terminal_event_id
+                ? await getLedger().getTerminalEventOutbox(event.task_id, terminalEvent, event.terminal_event_id)
+                : undefined;
+              if (outbox) return;
+            }
+            const delivered = await handleTerminalTaskEvent(event as typeof event & { event: "ship" | "block" }, {
             ledger: getLedger(),
             pmAgentId: config.pmAgentId,
             wakePm: async (agentId, prompt, delivery, legacyThreadUrl) => {
@@ -315,21 +395,76 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
             onError: (message, error) => ctx.logger.error(`${message} ${String(error)}`),
             onInfo: (message) => ctx.logger.info(message),
           });
-          terminalHandlers.add(handler);
-          void handler.then(
-            () => terminalHandlers.delete(handler),
-            () => terminalHandlers.delete(handler),
-          );
-          return handler;
+            if (claimed) {
+              if (delivered) await getLedger().completeTerminalEventDelivery(event.task_id, terminalEvent, event.terminal_event_id!, leaseId);
+              else await getLedger().releaseTerminalEventDelivery(event.task_id, terminalEvent, event.terminal_event_id!, leaseId);
+            }
+          };
+          const tracked = deliver().catch(async (error) => {
+            ctx.logger.error(`FleetMind terminal delivery failed: ${String(error)}`);
+          });
+          terminalHandlers.add(tracked);
+          void tracked.then(() => terminalHandlers.delete(tracked));
+          return tracked;
         });
         if (generation !== terminalEventGeneration) {
           await dispose();
           return;
         }
         stopTerminalEvents = dispose;
+        const reconcile = async (): Promise<"empty" | "work"> => {
+          const pending = await getLedger().listPendingTerminalEvents();
+          for (const task of pending) {
+            if (generation !== terminalEventGeneration) continue;
+            await transport.publish({
+              v: "1.0",
+              event: task.event,
+              task_id: task.task_id,
+              project: task.project,
+              worker: task.worker,
+              delegated_by: task.delegated_by || undefined,
+              at: task.at,
+              terminal_event_id: task.terminal_event_id,
+              delegation_thread: task.delegation_thread,
+              delivery_context: task.delivery_context,
+            });
+          }
+          return pending.length === 0 ? "empty" : "work";
+        };
+        let nextDelayMs = TERMINAL_RECONCILE_INITIAL_MS;
+        const scheduleReconcile = (delayMs: number): void => {
+          if (generation !== terminalEventGeneration) return;
+          terminalReconcileTimer = setTimeout(() => {
+            terminalReconcileTimer = undefined;
+            if (generation !== terminalEventGeneration) return;
+            void reconcile()
+              .then((outcome) => {
+                if (generation !== terminalEventGeneration) return;
+                nextDelayMs = nextTerminalReconcileDelay(nextDelayMs, outcome);
+                scheduleReconcile(nextDelayMs);
+              })
+              .catch((error) => {
+                if (generation !== terminalEventGeneration) return;
+                ctx.logger.error(`FleetMind terminal reconciliation failed: ${String(error)}`);
+                nextDelayMs = nextTerminalReconcileDelay(nextDelayMs, "error");
+                scheduleReconcile(nextDelayMs);
+              });
+          }, delayMs);
+          terminalReconcileTimer.unref?.();
+        };
+        try {
+          await reconcile();
+        } catch (error) {
+          ctx.logger.error(`FleetMind terminal reconciliation failed: ${String(error)}`);
+        }
+        // Startup always gets one short recovery check. Subsequent empty or
+        // failing checks back off from this initial interval.
+        if (generation === terminalEventGeneration) scheduleReconcile(nextDelayMs);
       },
       async stop() {
         terminalEventGeneration += 1;
+        if (terminalReconcileTimer) clearTimeout(terminalReconcileTimer);
+        terminalReconcileTimer = undefined;
         await stopTerminalEvents?.();
         stopTerminalEvents = undefined;
         await Promise.allSettled([...terminalHandlers]);
@@ -488,7 +623,15 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
         description,
         parameters: requiresWorker ? workerParameters : humanParameters,
         async execute(_id, rawParams) {
-          const text = await runLifecycleAction(getLedger(), action, rawParams as LifecycleToolParams);
+          const text = await runLifecycleAction(getLedger(), action, rawParams as LifecycleToolParams, {
+            publishTerminalEvent: action === "ship" || action === "block" ? publishTerminalEvent : undefined,
+            onTerminalPublishError: (taskId, event, _at, error) => {
+              // The state change and outbox are already durable. Do not report
+              // a completed lifecycle transition as failed just because the
+              // optional low-latency delivery attempt was unavailable.
+              api.logger.warn(`FleetMind terminal NATS fast path failed for ${taskId}/${event}: ${String(error)}`);
+            },
+          });
           return { content: [{ type: "text", text }], details: {} };
         },
       }, isHumanAuthorityAction(action) ? { optional: true } : undefined);

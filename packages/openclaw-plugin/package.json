@@ -1,6 +1,6 @@
 {
   "name": "@continuous-agentics/openclaw-fleetmind-delegation",
-  "version": "0.1.0-beta.5",
+  "version": "0.1.0-beta.6",
   "description": "OpenClaw plugin boundary for FleetMind delegation.",
   "license": "MIT",
   "type": "module",
@@ -29,7 +29,7 @@
     "test": "node -e \"require('fs').rmSync('test-dist',{recursive:true,force:true})\" && tsc -p tsconfig.test.json && node --test 'test-dist/test/**/*.test.js'"
   },
   "dependencies": {
-    "@continuous-agentics/delegation-core": "0.1.3",
+    "@continuous-agentics/delegation-core": "0.1.4",
     "@smithy/core": "3.24.6",
     "typebox": "^1.3.12"
   },

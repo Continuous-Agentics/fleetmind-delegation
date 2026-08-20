@@ -15,11 +15,12 @@ function ledger(getTask: TerminalEventLedger["getTask"]): TerminalEventLedger { 
 
 test("terminal ship wakes the PM with DDB-authoritative delivery and preserves human sign-off", async () => {
   const wakes: unknown[][] = [];
-  await handleTerminalTaskEvent({ v: "1.0", event: "ship", task_id: "deadbeef", worker: "forge", at: "2026-08-11T00:00:00Z", message: "PR ready", delivery_context: { provider: "discord", accountId: "wrong", conversationId: "wrong" } }, {
+  const delivered = await handleTerminalTaskEvent({ v: "1.0", event: "ship", task_id: "deadbeef", worker: "forge", at: "2026-08-11T00:00:00Z", message: "PR ready", delivery_context: { provider: "discord", accountId: "wrong", conversationId: "wrong" } }, {
     ledger: ledger(async () => task({ delivery_context: { provider: "slack", accountId: "main", conversationId: "C123", threadId: "123.456" } })),
     pmAgentId: "conductor",
     wakePm: (...args) => { wakes.push(args); },
   });
+  assert.equal(delivered, true);
   assert.deepEqual(wakes, [["conductor", "FleetMind terminal event received for task deadbeef. Review the authoritative task ledger before taking any action.", { provider: "slack", accountId: "main", conversationId: "C123", threadId: "123.456" }, undefined]]);
 });
 
@@ -55,10 +56,11 @@ test("terminal handling never includes NATS free text in the PM prompt", async (
 
 test("terminal handling contains a PM wake failure", async () => {
   const errors: string[] = [];
-  await assert.doesNotReject(handleTerminalTaskEvent({ v: "1.0", event: "ship", task_id: "deadbeef", worker: "forge", at: "2026-08-11T00:00:00Z" }, {
+  const delivered = await handleTerminalTaskEvent({ v: "1.0", event: "ship", task_id: "deadbeef", worker: "forge", at: "2026-08-11T00:00:00Z" }, {
     ledger: ledger(async () => task()), pmAgentId: "conductor", wakePm: () => { throw new Error("wake failed"); },
     onError: (message) => { errors.push(message); },
-  }));
+  });
+  assert.equal(delivered, false);
   assert.deepEqual(errors, ["Could not wake PM for task deadbeef."]);
 });
 

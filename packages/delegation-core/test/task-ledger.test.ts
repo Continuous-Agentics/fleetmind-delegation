@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
+import { ConditionalCheckFailedException, TransactionCanceledException } from "@aws-sdk/client-dynamodb";
 import { TaskConditionError, TaskLedger } from "../src/index.js";
 
 const record = {
@@ -43,6 +43,70 @@ test("TaskLedger preserves FleetMind's conditional worker acknowledgement", asyn
   );
 });
 
+test("terminal transitions atomically persist a pending outbox record", async () => {
+  const requests: Array<Record<string, unknown>> = [];
+  const documentClient = {
+    send: async (command: { input: Record<string, unknown> }) => { requests.push(command.input); },
+  };
+  const ledger = new TaskLedger({ tableName: "tasks", documentClient: documentClient as never });
+  await ledger.shipTask("deadbeef", "forge", "fleetmind");
+  const request = requests[0]!;
+  const items = request.TransactItems as Array<Record<string, Record<string, unknown>>>;
+  assert.equal(items.length, 2);
+  assert.match(String(items[0]?.Update?.UpdateExpression), /#st = :shipped/);
+  const outbox = items[1]?.Put?.Item as Record<string, unknown>;
+  assert.match(outbox["terminal_event_id"] as string, /^[0-9a-f-]{36}$/);
+  assert.equal(outbox["PK"], `OUTBOX#TASK#deadbeef#ship#${outbox["terminal_event_id"]}`);
+  assert.equal(outbox["delegated_at"], (items[0]?.Update?.ExpressionAttributeValues as Record<string, unknown>)[":now"]);
+});
+
+test("terminal transitions use distinct UUID outbox identities even in one clock tick", async () => {
+  const requests: Array<Record<string, unknown>> = [];
+  const documentClient = { send: async (command: { input: Record<string, unknown> }) => { requests.push(command.input); } };
+  const ledger = new TaskLedger({ tableName: "tasks", documentClient: documentClient as never });
+  await ledger.blockTask("deadbeef", "forge", "fleetmind");
+  await ledger.blockTask("deadbeef", "forge", "fleetmind");
+  const outboxes = requests.map((request) => (request.TransactItems as Array<Record<string, Record<string, unknown>>>)[1]?.Put?.Item as Record<string, unknown>);
+  assert.notEqual(outboxes[0]?.["terminal_event_id"], outboxes[1]?.["terminal_event_id"]);
+  assert.notEqual(outboxes[0]?.["PK"], outboxes[1]?.["PK"]);
+});
+
+test("terminal outbox completion is idempotent", async () => {
+  const requests: Array<Record<string, unknown>> = [];
+  const documentClient = {
+    send: async (command: { input: Record<string, unknown> }) => { requests.push(command.input); },
+  };
+  const ledger = new TaskLedger({ tableName: "tasks", documentClient: documentClient as never });
+  const eventId = "00000000-0000-4000-8000-000000000001";
+  assert.equal(await ledger.completeTerminalEventDelivery("deadbeef", "ship", eventId, "lease"), true);
+  const request = requests[0]!;
+  assert.deepEqual(request.Key, { PK: `OUTBOX#TASK#deadbeef#ship#${eventId}` });
+  assert.match(String(request.UpdateExpression), /GSI2PK = :gsi/);
+  assert.equal((request.ExpressionAttributeValues as Record<string, unknown>)[":gsi"], "OUTBOX#DELIVERED");
+});
+
+test("terminal outbox discovery paginates its dedicated states, independent of task status", async () => {
+  const requests: Array<Record<string, unknown>> = [];
+  const outbox = (id: string, state: "PENDING" | "DELIVERING", lease?: string) => ({
+    PK: `OUTBOX#TASK#${id}#ship#00000000-0000-4000-8000-00000000000${id[0]}`, GSI2PK: `OUTBOX#${state}`,
+    delegated_at: `2026-08-10T00:00:0${id[0]}Z`, task_id: id, project: "fleetmind",
+    delegated_by: "wren", terminal_event_id: `00000000-0000-4000-8000-00000000000${id[0]}`, event: "ship", at: `2026-08-10T00:00:0${id[0]}Z`, worker: "forge",
+    delivery_status: state.toLowerCase(), delivery_attempts: 0, expires_at: 1, ...(lease && { lease_expires_at: lease }),
+  });
+  const documentClient = { send: async (command: { input: Record<string, unknown> }) => {
+    requests.push(command.input);
+    const state = (command.input.ExpressionAttributeValues as Record<string, string>)[":pk"];
+    if (state === "OUTBOX#PENDING" && !command.input.ExclusiveStartKey) return { Items: [outbox("1eadbeef", "PENDING")], LastEvaluatedKey: { PK: "cursor" } };
+    if (state === "OUTBOX#PENDING") return { Items: [outbox("2eadbeef", "PENDING")] };
+    return { Items: [outbox("3eadbeef", "DELIVERING", "2000-01-01T00:00:00Z")] };
+  }};
+  const ledger = new TaskLedger({ tableName: "tasks", documentClient: documentClient as never });
+  const events = await ledger.listPendingTerminalEvents(3);
+  assert.equal(events.length, 3);
+  assert.ok(requests.some((request) => request.ExclusiveStartKey));
+  assert.ok(requests.every((request) => request.IndexName === "StatusIndex"));
+});
+
 test("TaskLedger translates conditional-write failures to non-retryable lifecycle errors", async () => {
   const documentClient = {
     send: async () => { throw new ConditionalCheckFailedException({ $metadata: {}, message: "condition failed" }); },
@@ -51,6 +115,26 @@ test("TaskLedger translates conditional-write failures to non-retryable lifecycl
   await assert.rejects(
     () => ledger.shipTask("deadbeef", "forge", "fleetmind"),
     (error: unknown) => error instanceof TaskConditionError && error.message.includes("accepted→shipped"),
+  );
+});
+
+test("TaskLedger translates only conditional transaction cancellations to lifecycle errors", async () => {
+  const conditionFailure = new TransactionCanceledException({
+    $metadata: {}, message: "condition failed", CancellationReasons: [{ Code: "ConditionalCheckFailed" }],
+  });
+  const conditionLedger = new TaskLedger({ tableName: "tasks", documentClient: { send: async () => { throw conditionFailure; } } as never });
+  await assert.rejects(
+    () => conditionLedger.shipTask("deadbeef", "forge", "fleetmind"),
+    (error: unknown) => error instanceof TaskConditionError,
+  );
+
+  const transientFailure = new TransactionCanceledException({
+    $metadata: {}, message: "transaction conflict", CancellationReasons: [{ Code: "TransactionConflict" }],
+  });
+  const transientLedger = new TaskLedger({ tableName: "tasks", documentClient: { send: async () => { throw transientFailure; } } as never });
+  await assert.rejects(
+    () => transientLedger.shipTask("deadbeef", "forge", "fleetmind"),
+    (error: unknown) => error === transientFailure,
   );
 });
 
