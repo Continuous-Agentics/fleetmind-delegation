@@ -20,7 +20,7 @@ This project follows [Semantic Versioning](https://semver.org/). Release notes c
 
 ### Unreleased
 
-## [openclaw-fleetmind-delegation-v0.1.0-beta.9] - Unreleased
+## [openclaw-fleetmind-delegation-v0.1.0] - Unreleased
 
 ### Fixed
 

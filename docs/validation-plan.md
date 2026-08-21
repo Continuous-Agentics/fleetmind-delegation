@@ -23,7 +23,7 @@ observable effects of delegation delivery and terminal `ship`/`block` flows:
 ## 3. FleetMind provisioning contract test
 
 Render the FleetMind consumer configuration and verify that it pins the exact
-plugin beta and supplies only the required runtime configuration and
+plugin version and supplies only the required runtime configuration and
 permissions. This test does not use live Slack, AWS, or agent turns.
 
 ## 4. Focused sandbox smoke tests

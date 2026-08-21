@@ -25,19 +25,19 @@ Terminal and worker-event NATS services are opt-in. Both require an authoritativ
 
 ## Installation
 
-The plugin is published on npm. Install the current sandbox beta with the explicit `beta` dist-tag:
+Install the current stable release with the `latest` dist-tag:
 
 ```bash
-openclaw plugins install npm:@continuous-agentics/openclaw-fleetmind-delegation@beta
+openclaw plugins install npm:@continuous-agentics/openclaw-fleetmind-delegation@latest
 ```
 
 For a reproducible deployment, pin the tested version instead:
 
 ```bash
-openclaw plugins install npm:@continuous-agentics/openclaw-fleetmind-delegation@0.1.0-beta.9
+openclaw plugins install npm:@continuous-agentics/openclaw-fleetmind-delegation@0.1.0
 ```
 
-Do not install without a tag or version yet: npm `latest` remains `0.1.0-beta.1`, which predates the OpenClaw-managed AWS dependency compatibility fixes.
+Before `0.1.0` is published, install the locally packed candidate only in the sandbox described by the runbook.
 
 The command registers the plugin manifest ID, `fleetmind-delegation`.
 

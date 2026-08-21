@@ -1,7 +1,7 @@
 # OpenClaw delegation-plugin sandbox runbook
 
 Use this runbook for the Wren → Vesper acceptance sandbox only. It is a
-precondition for publishing or promoting the plugin beta; it does not authorize
+precondition for publishing the plugin; it does not authorize
 a production deployment.
 
 ## Preconditions
@@ -60,7 +60,7 @@ verify this recovery procedure:
    delivered exactly once.
 
 This is the required manual reconciler until an auditable retry/requeue feature
-exists. A failed recovery test blocks beta publication and migration.
+exists. A failed recovery test blocks publication and migration.
 
 ## Rollback
 
@@ -73,11 +73,11 @@ If any smoke or end-to-end check fails:
 3. Reconcile every `accepted` task created during the test using the
    claim-before-wake procedure above. Do not abandon in-flight tasks.
 4. Record the plugin version, commit, task IDs, failure symptom, rollback time,
-   and final task states. Do not retry the same beta until the failure is fixed
+and final task states. Do not retry the same release candidate until the failure is fixed
    and the lower-level tests are extended.
 
 ## Acceptance decision
 
-The beta is ready for its human-gated release only when all focused checks, the
+The release is ready for its human-gated publication only when all focused checks, the
 full create → receipt/thread → ship/block → PM receipt/thread → sign-off/merge
 flow, and the claim-before-wake recovery test have documented passing evidence.
