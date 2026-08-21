@@ -79,16 +79,14 @@ FleetMind support for rendering this configuration from `fleet.yaml` is tracked 
 
 ### Optional NATS and Slack delivery
 
-`terminalEvents` delivers a fixed PM receipt for `ship` and `block`. It resolves the task's persisted delivery context first, then falls back to a legacy Slack permalink only for old records. Set `pmFallbackSlack` only to provide an explicit destination for legacy records that have neither form of routing metadata; the plugin will not synthesize an `agent:<pm>:main` session. A failed terminal receipt leaves its durable outbox record pending for retry. `delegationEvents` enables a worker subscriber for one configured OpenClaw agent. Set `workerHomeSlack` to open each delegated task in a fresh worker-home-channel thread; without it, a Slack task falls back to the authoritative planning thread. The worker service atomically acknowledges (claims) the delegated task before posting a receipt or waking the agent, so duplicate NATS deliveries do not start duplicate worker runs. Slack receipt failure never prevents the claimed task's worker wake; a wake failure leaves the claimed task for operational reconciliation.
+`terminalEvents` delivers a fixed PM receipt for `ship` and `block`. It resolves the task's persisted delivery context first, then falls back to a valid legacy Slack permalink only for old records. A task with neither is refused rather than routed to a generic channel or synthesized `agent:<pm>:main` session. A failed terminal receipt leaves its durable outbox record pending for retry. `delegationEvents` enables a worker subscriber for one configured OpenClaw agent. Set `workerHomeSlack` to open each delegated task in a fresh worker-home-channel thread; without it, a Slack task falls back to the authoritative planning thread. The worker service atomically acknowledges (claims) the delegated task before posting a receipt or waking the agent, so duplicate NATS deliveries do not start duplicate worker runs. Slack receipt failure never prevents the claimed task's worker wake; a wake failure leaves the claimed task for operational reconciliation.
 
 ```json5
 {
   terminalEvents: {
     natsServers: ["nats://nats.example:4222"],
     subjectPrefix: "fleetmind",
-    pmAgentId: "conductor",
-    // Only for legacy records with no delivery_context or valid Slack permalink.
-    pmFallbackSlack: { accountId: "default", conversationId: "C0123456789" }
+    pmAgentId: "conductor"
   },
   delegationEvents: {
     natsServers: ["nats://nats.example:4222"],

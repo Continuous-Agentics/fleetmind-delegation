@@ -48,8 +48,6 @@ interface PluginConfig {
     natsServers: string[];
     subjectPrefix: string;
     pmAgentId: string;
-    /** Explicit destination for legacy tasks with no routable thread metadata. */
-    pmFallbackSlack?: { accountId: string; conversationId: string };
   };
   delegationEvents?: {
     natsServers: string[];
@@ -131,13 +129,9 @@ function readConfig(config: Record<string, unknown>): PluginConfig {
   const natsServers = terminal?.["natsServers"];
   const subjectPrefix = terminal?.["subjectPrefix"];
   const pmAgentId = terminal?.["pmAgentId"];
-  const pmFallbackSlack = terminal?.["pmFallbackSlack"];
   if (terminal && (!Array.isArray(natsServers) || natsServers.length === 0 || natsServers.some((server) => typeof server !== "string" || server.length === 0)
-    || typeof subjectPrefix !== "string" || subjectPrefix.length === 0 || typeof pmAgentId !== "string" || pmAgentId.length === 0
-    || (pmFallbackSlack !== undefined && (typeof pmFallbackSlack !== "object" || pmFallbackSlack === null || Array.isArray(pmFallbackSlack)
-      || typeof (pmFallbackSlack as Record<string, unknown>)["accountId"] !== "string" || !(pmFallbackSlack as Record<string, unknown>)["accountId"]
-      || typeof (pmFallbackSlack as Record<string, unknown>)["conversationId"] !== "string" || !(pmFallbackSlack as Record<string, unknown>)["conversationId"])))) {
-    throw new Error("fleetmind-delegation config.terminalEvents requires non-empty natsServers, subjectPrefix, pmAgentId, and (when set) pmFallbackSlack accountId/conversationId.");
+    || typeof subjectPrefix !== "string" || subjectPrefix.length === 0 || typeof pmAgentId !== "string" || pmAgentId.length === 0)) {
+    throw new Error("fleetmind-delegation config.terminalEvents requires non-empty natsServers, subjectPrefix, and pmAgentId.");
   }
   const delegationEvents = config["delegationEvents"];
   if (delegationEvents !== undefined && (typeof delegationEvents !== "object" || delegationEvents === null || Array.isArray(delegationEvents))) {
@@ -159,7 +153,6 @@ function readConfig(config: Record<string, unknown>): PluginConfig {
     tableName, awsRegion, reviewerAgentIds, workerAgentIds: workerAgentIds as Record<string, string>,
     terminalEvents: terminal ? {
       natsServers: natsServers as string[], subjectPrefix: subjectPrefix as string, pmAgentId: pmAgentId as string,
-      pmFallbackSlack: pmFallbackSlack as { accountId: string; conversationId: string } | undefined,
     } : undefined,
     delegationEvents: delegation ? {
       natsServers: delegationNatsServers as string[], subjectPrefix: delegationSubjectPrefix as string, agentId: delegationAgentId as string,
@@ -180,7 +173,6 @@ export function deliveryTargetForPm(
   agentId: string,
   delivery?: DeliveryContext,
   legacyThreadUrl?: string,
-  fallbackSlack?: { accountId: string; conversationId: string },
 ): DeliveryTarget | undefined {
   if (delivery) {
     const sessionKey = delivery.provider === "slack" && delivery.threadId
@@ -189,15 +181,7 @@ export function deliveryTargetForPm(
     return { channel: delivery.provider, conversationId: delivery.conversationId, threadId: delivery.threadId, accountId: delivery.accountId, sessionKey };
   }
   const match = legacyThreadUrl?.match(/\/archives\/([A-Z0-9]+)\/p(\d{7,})/);
-  if (!match) {
-    if (!fallbackSlack) return undefined;
-    return {
-      channel: "slack",
-      conversationId: fallbackSlack.conversationId,
-      accountId: fallbackSlack.accountId,
-      sessionKey: `agent:${agentId}:slack:channel:${fallbackSlack.conversationId.toLowerCase()}`,
-    };
-  }
+  if (!match) return undefined;
   const timestamp = match[2]!;
   const threadId = `${timestamp.slice(0, -6)}.${timestamp.slice(-6)}`;
   return { channel: "slack", conversationId: match[1]!, threadId, sessionKey: `agent:${agentId}:slack:channel:${match[1]!.toLowerCase()}:thread:${threadId}` };
@@ -378,9 +362,9 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
             ledger: getLedger(),
             pmAgentId: config.pmAgentId,
             wakePm: async (agentId, _prompt, delivery, legacyThreadUrl) => {
-              const target = deliveryTargetForPm(agentId, delivery, legacyThreadUrl, config.pmFallbackSlack);
+              const target = deliveryTargetForPm(agentId, delivery, legacyThreadUrl);
               if (!target) {
-                throw new Error(`Task has no delivery_context or legacy delegation_thread, and terminalEvents.pmFallbackSlack is not configured.`);
+                throw new Error(`Task has no delivery_context or valid legacy delegation_thread; refusing to route a terminal event without authoritative metadata.`);
               }
               const adapter = await api.runtime.channel.outbound.loadAdapter(target.channel as never);
               if (!adapter) throw new Error(`No outbound adapter for ${target.channel}.`);

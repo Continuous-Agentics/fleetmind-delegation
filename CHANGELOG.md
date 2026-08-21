@@ -24,7 +24,7 @@ This project follows [Semantic Versioning](https://semver.org/). Release notes c
 
 ### Fixed
 
-- Declare `terminalEvents.pmFallbackSlack` in the plugin manifest schema so OpenClaw accepts the explicit legacy terminal-routing fallback.
+- Refuse terminal events that lack persisted delivery context and a valid legacy Slack permalink instead of routing them to a generic fallback channel.
 - Deliver terminal notifications as deterministic receipts instead of invoking an embedded PM agent with autonomous tools.
 
 ## [openclaw-fleetmind-delegation-v0.1.0-beta.7] - Unreleased

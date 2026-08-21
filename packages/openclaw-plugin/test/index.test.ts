@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
   deliveryTargetForPm,
@@ -14,21 +13,6 @@ test("plugin package is wired to the workspace", () => {
   assert.equal(pluginPackageName, "@continuous-agentics/openclaw-fleetmind-delegation");
 });
 
-test("plugin manifest accepts the explicit legacy terminal Slack fallback", () => {
-  const manifest = JSON.parse(readFileSync(new URL("../../openclaw.plugin.json", import.meta.url), "utf8"));
-  const fallback = manifest.configSchema.properties.terminalEvents.properties.pmFallbackSlack;
-  assert.deepEqual(fallback, {
-    type: "object",
-    additionalProperties: false,
-    properties: {
-      accountId: { type: "string", minLength: 1 },
-      conversationId: { type: "string", minLength: 1 },
-    },
-    required: ["accountId", "conversationId"],
-    description: "Explicit Slack fallback for legacy terminal events with no routable task metadata.",
-  });
-});
-
 test("terminal routing uses persisted Slack context after a restart", () => {
   assert.deepEqual(
     deliveryTargetForPm("wren", { provider: "slack", accountId: "wren", conversationId: "C123", threadId: "123.456" }),
@@ -36,11 +20,7 @@ test("terminal routing uses persisted Slack context after a restart", () => {
   );
 });
 
-test("terminal routing sends legacy tasks without metadata to an explicit Slack fallback", () => {
-  assert.deepEqual(
-    deliveryTargetForPm("wren", undefined, undefined, { accountId: "wren", conversationId: "C999" }),
-    { channel: "slack", accountId: "wren", conversationId: "C999", sessionKey: "agent:wren:slack:channel:c999" },
-  );
+test("terminal routing refuses legacy tasks without authoritative metadata", () => {
   assert.equal(deliveryTargetForPm("wren"), undefined);
 });
 

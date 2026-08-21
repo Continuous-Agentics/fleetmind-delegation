@@ -45,17 +45,7 @@
             "items": { "type": "string", "minLength": 1 }
           },
           "subjectPrefix": { "type": "string", "minLength": 1 },
-          "pmAgentId": { "type": "string", "minLength": 1 },
-          "pmFallbackSlack": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "accountId": { "type": "string", "minLength": 1 },
-              "conversationId": { "type": "string", "minLength": 1 }
-            },
-            "required": ["accountId", "conversationId"],
-            "description": "Explicit Slack fallback for legacy terminal events with no routable task metadata."
-          }
+          "pmAgentId": { "type": "string", "minLength": 1 }
         },
         "required": ["natsServers", "subjectPrefix", "pmAgentId"],
         "description": "Enable the plugin-owned PM subscriber for terminal NATS ship and block events."
