@@ -20,6 +20,13 @@ This project follows [Semantic Versioning](https://semver.org/). Release notes c
 
 ### Unreleased
 
+## [openclaw-fleetmind-delegation-v0.1.0-beta.9] - Unreleased
+
+### Fixed
+
+- Declare `terminalEvents.pmFallbackSlack` in the plugin manifest schema so OpenClaw accepts the explicit legacy terminal-routing fallback.
+- Deliver terminal notifications as deterministic receipts instead of invoking an embedded PM agent with autonomous tools.
+
 ## [openclaw-fleetmind-delegation-v0.1.0-beta.7] - Unreleased
 
 ### Fixed

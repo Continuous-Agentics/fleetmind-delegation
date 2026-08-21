@@ -29,8 +29,8 @@ test("legacy Slack permalink is used only when no structured delivery exists", (
 
 test("Slack receipts use the expected concise worker and PM text", () => {
   assert.equal(workerDelegationReceipt("deadbeef", "conductor", "https://example/slack/thread"), "👋 Received delegation `deadbeef` from conductor — picking up. Triggered by https://example/slack/thread.");
-  assert.equal(pmTerminalReceipt("ship", "deadbeef", "forge"), "✓ Received ship for `deadbeef` from forge — reviewing");
-  assert.equal(pmTerminalReceipt("block", "deadbeef", "forge"), "⚠️ Received block for `deadbeef` from forge — reviewing");
+  assert.equal(pmTerminalReceipt("ship", "deadbeef", "forge"), "✓ forge shipped `deadbeef` — awaiting PM review.");
+  assert.equal(pmTerminalReceipt("block", "deadbeef", "forge"), "⚠️ forge blocked `deadbeef` — awaiting PM review.");
 });
 
 test("Slack receipt failure is contained", async () => {

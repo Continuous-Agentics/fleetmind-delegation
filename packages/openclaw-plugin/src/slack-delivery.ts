@@ -59,8 +59,8 @@ export function workerDelegationReceipt(taskId: string, delegatedBy?: string, ba
 
 export function pmTerminalReceipt(event: "ship" | "block", taskId: string, worker: string): string {
   return event === "ship"
-    ? `✓ Received ship for \`${taskId}\` from ${worker} — reviewing`
-    : `⚠️ Received block for \`${taskId}\` from ${worker} — reviewing`;
+    ? `✓ ${worker} shipped \`${taskId}\` — awaiting PM review.`
+    : `⚠️ ${worker} blocked \`${taskId}\` — awaiting PM review.`;
 }
 
 /**

@@ -377,49 +377,22 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
             const delivered = await handleTerminalTaskEvent(event as typeof event & { event: "ship" | "block" }, {
             ledger: getLedger(),
             pmAgentId: config.pmAgentId,
-            wakePm: async (agentId, prompt, delivery, legacyThreadUrl) => {
+            wakePm: async (agentId, _prompt, delivery, legacyThreadUrl) => {
               const target = deliveryTargetForPm(agentId, delivery, legacyThreadUrl, config.pmFallbackSlack);
               if (!target) {
                 throw new Error(`Task has no delivery_context or legacy delegation_thread, and terminalEvents.pmFallbackSlack is not configured.`);
               }
-              if (target?.channel === "slack") {
-                const receipt = pmTerminalReceipt(event.event as "ship" | "block", event.task_id, event.worker);
-                try {
-                  const adapter = await api.runtime.channel.outbound.loadAdapter(target.channel as never);
-                  const sendText = adapter?.sendText;
-                  if (sendText) await sendText({ cfg: ctx.config, to: target.conversationId, text: receipt, threadId: target.threadId, accountId: target.accountId });
-                } catch (error) {
-                  ctx.logger.warn(`FleetMind terminal receipt failed: ${String(error)}`);
-                }
-              }
-              const result = await api.runtime.agent.runEmbeddedAgent({
-                sessionId: target.sessionKey,
-                sessionKey: target.sessionKey,
-                runId: randomUUID(),
-                agentId,
-                workspaceDir: api.runtime.agent.resolveAgentWorkspaceDir(ctx.config, agentId),
-                config: ctx.config,
-                prompt,
-                messageChannel: target?.channel,
-                messageProvider: target?.channel,
-                messageTo: target?.conversationId,
-                messageThreadId: target?.threadId,
-                currentChannelId: target?.conversationId,
-                currentThreadTs: target?.threadId,
-                agentAccountId: target?.accountId,
-                timeoutMs: api.runtime.agent.resolveAgentTimeoutMs({ cfg: ctx.config }),
-                trigger: "manual",
-              });
-              if (result.didDeliverSourceReplyViaMessageTool) return;
               const adapter = await api.runtime.channel.outbound.loadAdapter(target.channel as never);
               if (!adapter) throw new Error(`No outbound adapter for ${target.channel}.`);
               const sendText = adapter.sendText;
               if (!sendText) throw new Error(`Outbound adapter for ${target.channel} cannot send text.`);
-              for (const payload of result.payloads ?? []) {
-                if (!payload.isReasoning && !payload.isCommentary && payload.text?.trim()) {
-                  await sendText({ cfg: ctx.config, to: target.conversationId, text: payload.text, threadId: target.threadId, accountId: target.accountId });
-                }
-              }
+              await sendText({
+                cfg: ctx.config,
+                to: target.conversationId,
+                text: pmTerminalReceipt(event.event as "ship" | "block", event.task_id, event.worker),
+                threadId: target.threadId,
+                accountId: target.accountId,
+              });
             },
             onError: (message, error) => ctx.logger.error(`${message} ${String(error)}`),
             onInfo: (message) => ctx.logger.info(message),
