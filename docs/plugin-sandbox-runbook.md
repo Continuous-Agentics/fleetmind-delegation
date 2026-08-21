@@ -1,7 +1,7 @@
 # OpenClaw delegation-plugin sandbox runbook
 
 Use this runbook for the Wren → Vesper acceptance sandbox only. It is a
-precondition for publishing or promoting the plugin beta; it does not authorize
+precondition for publishing the plugin; it does not authorize
 a production deployment.
 
 ## Preconditions
@@ -28,7 +28,8 @@ a production deployment.
    receives exactly one Slack receipt/thread and exactly one worker wake, and
    that the authoritative ledger state becomes `accepted`.
 4. Ship and then complete human sign-off/merge through the configured authority.
-   Confirm Wren receives the terminal Slack receipt/thread and matching wake.
+   Confirm Wren receives exactly one terminal Slack receipt/thread. The plugin
+   must not invoke a PM agent or make a review decision.
 5. Repeat with a deliberately unavailable Slack receipt path. The worker wake
    must still occur using the authoritative delivery context; no Discord call
    may be made.
@@ -55,11 +56,11 @@ verify this recovery procedure:
 4. Create a new replacement task that references the blocked task ID and send
    it through the normal delegation path. Do not mutate the accepted task
    directly and do not replay a stale NATS event.
-5. Confirm Wren receives the block terminal wake and the replacement task is
+5. Confirm Wren receives the block terminal receipt and the replacement task is
    delivered exactly once.
 
 This is the required manual reconciler until an auditable retry/requeue feature
-exists. A failed recovery test blocks beta publication and migration.
+exists. A failed recovery test blocks publication and migration.
 
 ## Rollback
 
@@ -72,11 +73,11 @@ If any smoke or end-to-end check fails:
 3. Reconcile every `accepted` task created during the test using the
    claim-before-wake procedure above. Do not abandon in-flight tasks.
 4. Record the plugin version, commit, task IDs, failure symptom, rollback time,
-   and final task states. Do not retry the same beta until the failure is fixed
+and final task states. Do not retry the same release candidate until the failure is fixed
    and the lower-level tests are extended.
 
 ## Acceptance decision
 
-The beta is ready for its human-gated release only when all focused checks, the
+The release is ready for its human-gated publication only when all focused checks, the
 full create → receipt/thread → ship/block → PM receipt/thread → sign-off/merge
 flow, and the claim-before-wake recovery test have documented passing evidence.

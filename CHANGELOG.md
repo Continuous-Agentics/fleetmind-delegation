@@ -20,6 +20,13 @@ This project follows [Semantic Versioning](https://semver.org/). Release notes c
 
 ### Unreleased
 
+## [openclaw-fleetmind-delegation-v0.1.0] - Unreleased
+
+### Fixed
+
+- Refuse terminal events that lack persisted delivery context and a valid legacy Slack permalink instead of routing them to a generic fallback channel.
+- Deliver terminal notifications as deterministic receipts instead of invoking an embedded PM agent with autonomous tools.
+
 ## [openclaw-fleetmind-delegation-v0.1.0-beta.7] - Unreleased
 
 ### Fixed

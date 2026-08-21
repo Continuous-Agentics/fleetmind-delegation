@@ -75,8 +75,8 @@ Verify the npm `latest` tag and the GitHub Release, then announce the package na
 
 ## Prepare an OpenClaw plugin release
 
-1. Complete the sandbox acceptance and rollback record in [the plugin sandbox runbook](docs/plugin-sandbox-runbook.md). Do not use a production fleet for the beta.
-2. Update only `packages/openclaw-plugin/package.json` and its package-scoped `CHANGELOG.md` entry. Use a prerelease version for the first sandbox release.
+1. Complete the sandbox acceptance and rollback record in [the plugin sandbox runbook](docs/plugin-sandbox-runbook.md). Do not use a production fleet for the acceptance candidate.
+2. Update only `packages/openclaw-plugin/package.json` and its package-scoped `CHANGELOG.md` entry. Use a prerelease version only for an explicitly designated prerelease; use a stable version after successful acceptance.
 3. Run the full repository verification plus the plugin package check:
 
    ```bash
@@ -94,6 +94,6 @@ Verify the npm `latest` tag and the GitHub Release, then announce the package na
    npm view @continuous-agentics/openclaw-fleetmind-delegation@VERSION version
    ```
 
-6. Tag the merged commit as `openclaw-fleetmind-delegation-vVERSION` and push it. The package-specific release workflow creates a draft GitHub Release. Grace publishes that draft as the human gate; the publish workflow verifies tag/version parity, builds, tests, smoke-tests the tarball, and publishes a prerelease under npm's `beta` tag.
+6. Tag the merged commit as `openclaw-fleetmind-delegation-vVERSION` and push it. The package-specific release workflow creates a draft GitHub Release. Grace publishes that draft as the human gate; the publish workflow verifies tag/version parity, builds, tests, smoke-tests the tarball, and publishes prereleases under npm's `beta` tag or stable releases under `latest`.
 
 Never reuse a published npm version or retag a different commit. If a publish workflow fails after the tag exists, correct the safe-to-retry cause and dispatch it for that same immutable tag; otherwise prepare a new version.

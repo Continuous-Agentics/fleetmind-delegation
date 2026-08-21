@@ -16,20 +16,20 @@ observable effects of delegation delivery and terminal `ship`/`block` flows:
 
 - a Slack delivery creates or uses the expected worker thread and wakes that
   worker's matching session;
-- terminal events post the PM receipt and wake the matching PM thread session;
-- Slack failure does not prevent the relevant wake;
+- terminal events post exactly one PM receipt to the persisted delivery target;
+- a terminal Slack failure retains the durable outbox record for retry;
 - non-Slack delivery never invokes Slack.
 
 ## 3. FleetMind provisioning contract test
 
 Render the FleetMind consumer configuration and verify that it pins the exact
-plugin beta and supplies only the required runtime configuration and
+plugin version and supplies only the required runtime configuration and
 permissions. This test does not use live Slack, AWS, or agent turns.
 
 ## 4. Focused sandbox smoke tests
 
 Run separate sandbox checks for plugin loading/tool registration, one worker
-Slack receipt-and-thread flow, one PM terminal receipt-and-thread flow, and
+Slack receipt-and-thread flow, one PM terminal-receipt flow, and
 sign-off/merge authorization.
 
 ## 5. End-to-end acceptance

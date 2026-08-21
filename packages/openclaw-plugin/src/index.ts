@@ -48,8 +48,6 @@ interface PluginConfig {
     natsServers: string[];
     subjectPrefix: string;
     pmAgentId: string;
-    /** Explicit destination for legacy tasks with no routable thread metadata. */
-    pmFallbackSlack?: { accountId: string; conversationId: string };
   };
   delegationEvents?: {
     natsServers: string[];
@@ -131,13 +129,9 @@ function readConfig(config: Record<string, unknown>): PluginConfig {
   const natsServers = terminal?.["natsServers"];
   const subjectPrefix = terminal?.["subjectPrefix"];
   const pmAgentId = terminal?.["pmAgentId"];
-  const pmFallbackSlack = terminal?.["pmFallbackSlack"];
   if (terminal && (!Array.isArray(natsServers) || natsServers.length === 0 || natsServers.some((server) => typeof server !== "string" || server.length === 0)
-    || typeof subjectPrefix !== "string" || subjectPrefix.length === 0 || typeof pmAgentId !== "string" || pmAgentId.length === 0
-    || (pmFallbackSlack !== undefined && (typeof pmFallbackSlack !== "object" || pmFallbackSlack === null || Array.isArray(pmFallbackSlack)
-      || typeof (pmFallbackSlack as Record<string, unknown>)["accountId"] !== "string" || !(pmFallbackSlack as Record<string, unknown>)["accountId"]
-      || typeof (pmFallbackSlack as Record<string, unknown>)["conversationId"] !== "string" || !(pmFallbackSlack as Record<string, unknown>)["conversationId"])))) {
-    throw new Error("fleetmind-delegation config.terminalEvents requires non-empty natsServers, subjectPrefix, pmAgentId, and (when set) pmFallbackSlack accountId/conversationId.");
+    || typeof subjectPrefix !== "string" || subjectPrefix.length === 0 || typeof pmAgentId !== "string" || pmAgentId.length === 0)) {
+    throw new Error("fleetmind-delegation config.terminalEvents requires non-empty natsServers, subjectPrefix, and pmAgentId.");
   }
   const delegationEvents = config["delegationEvents"];
   if (delegationEvents !== undefined && (typeof delegationEvents !== "object" || delegationEvents === null || Array.isArray(delegationEvents))) {
@@ -159,7 +153,6 @@ function readConfig(config: Record<string, unknown>): PluginConfig {
     tableName, awsRegion, reviewerAgentIds, workerAgentIds: workerAgentIds as Record<string, string>,
     terminalEvents: terminal ? {
       natsServers: natsServers as string[], subjectPrefix: subjectPrefix as string, pmAgentId: pmAgentId as string,
-      pmFallbackSlack: pmFallbackSlack as { accountId: string; conversationId: string } | undefined,
     } : undefined,
     delegationEvents: delegation ? {
       natsServers: delegationNatsServers as string[], subjectPrefix: delegationSubjectPrefix as string, agentId: delegationAgentId as string,
@@ -180,7 +173,6 @@ export function deliveryTargetForPm(
   agentId: string,
   delivery?: DeliveryContext,
   legacyThreadUrl?: string,
-  fallbackSlack?: { accountId: string; conversationId: string },
 ): DeliveryTarget | undefined {
   if (delivery) {
     const sessionKey = delivery.provider === "slack" && delivery.threadId
@@ -189,15 +181,7 @@ export function deliveryTargetForPm(
     return { channel: delivery.provider, conversationId: delivery.conversationId, threadId: delivery.threadId, accountId: delivery.accountId, sessionKey };
   }
   const match = legacyThreadUrl?.match(/\/archives\/([A-Z0-9]+)\/p(\d{7,})/);
-  if (!match) {
-    if (!fallbackSlack) return undefined;
-    return {
-      channel: "slack",
-      conversationId: fallbackSlack.conversationId,
-      accountId: fallbackSlack.accountId,
-      sessionKey: `agent:${agentId}:slack:channel:${fallbackSlack.conversationId.toLowerCase()}`,
-    };
-  }
+  if (!match) return undefined;
   const timestamp = match[2]!;
   const threadId = `${timestamp.slice(0, -6)}.${timestamp.slice(-6)}`;
   return { channel: "slack", conversationId: match[1]!, threadId, sessionKey: `agent:${agentId}:slack:channel:${match[1]!.toLowerCase()}:thread:${threadId}` };
@@ -377,49 +361,22 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
             const delivered = await handleTerminalTaskEvent(event as typeof event & { event: "ship" | "block" }, {
             ledger: getLedger(),
             pmAgentId: config.pmAgentId,
-            wakePm: async (agentId, prompt, delivery, legacyThreadUrl) => {
-              const target = deliveryTargetForPm(agentId, delivery, legacyThreadUrl, config.pmFallbackSlack);
+            wakePm: async (agentId, _prompt, delivery, legacyThreadUrl) => {
+              const target = deliveryTargetForPm(agentId, delivery, legacyThreadUrl);
               if (!target) {
-                throw new Error(`Task has no delivery_context or legacy delegation_thread, and terminalEvents.pmFallbackSlack is not configured.`);
+                throw new Error(`Task has no delivery_context or valid legacy delegation_thread; refusing to route a terminal event without authoritative metadata.`);
               }
-              if (target?.channel === "slack") {
-                const receipt = pmTerminalReceipt(event.event as "ship" | "block", event.task_id, event.worker);
-                try {
-                  const adapter = await api.runtime.channel.outbound.loadAdapter(target.channel as never);
-                  const sendText = adapter?.sendText;
-                  if (sendText) await sendText({ cfg: ctx.config, to: target.conversationId, text: receipt, threadId: target.threadId, accountId: target.accountId });
-                } catch (error) {
-                  ctx.logger.warn(`FleetMind terminal receipt failed: ${String(error)}`);
-                }
-              }
-              const result = await api.runtime.agent.runEmbeddedAgent({
-                sessionId: target.sessionKey,
-                sessionKey: target.sessionKey,
-                runId: randomUUID(),
-                agentId,
-                workspaceDir: api.runtime.agent.resolveAgentWorkspaceDir(ctx.config, agentId),
-                config: ctx.config,
-                prompt,
-                messageChannel: target?.channel,
-                messageProvider: target?.channel,
-                messageTo: target?.conversationId,
-                messageThreadId: target?.threadId,
-                currentChannelId: target?.conversationId,
-                currentThreadTs: target?.threadId,
-                agentAccountId: target?.accountId,
-                timeoutMs: api.runtime.agent.resolveAgentTimeoutMs({ cfg: ctx.config }),
-                trigger: "manual",
-              });
-              if (result.didDeliverSourceReplyViaMessageTool) return;
               const adapter = await api.runtime.channel.outbound.loadAdapter(target.channel as never);
               if (!adapter) throw new Error(`No outbound adapter for ${target.channel}.`);
               const sendText = adapter.sendText;
               if (!sendText) throw new Error(`Outbound adapter for ${target.channel} cannot send text.`);
-              for (const payload of result.payloads ?? []) {
-                if (!payload.isReasoning && !payload.isCommentary && payload.text?.trim()) {
-                  await sendText({ cfg: ctx.config, to: target.conversationId, text: payload.text, threadId: target.threadId, accountId: target.accountId });
-                }
-              }
+              await sendText({
+                cfg: ctx.config,
+                to: target.conversationId,
+                text: pmTerminalReceipt(event.event as "ship" | "block", event.task_id, event.worker),
+                threadId: target.threadId,
+                accountId: target.accountId,
+              });
             },
             onError: (message, error) => ctx.logger.error(`${message} ${String(error)}`),
             onInfo: (message) => ctx.logger.info(message),

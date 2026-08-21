@@ -21,23 +21,23 @@ Lifecycle transitions use `TaskLedger` conditional writes, so the task state mac
 
 `fleetmind_task_signoff` and `fleetmind_task_merge` are human-authority transitions. They are optional tools in the manifest and fail closed in a `before_tool_call` hook unless the calling OpenClaw agent ID appears in configured `reviewerAgentIds`.
 
-Terminal and worker-event NATS services are opt-in. When configured, they require an authoritative task-ledger record before routing or waking an agent, post best-effort Slack receipts, and wake the matching OpenClaw thread session. Discord delivery remains out of scope. The plugin does not create tasks or publish/release packages.
+Terminal and worker-event NATS services are opt-in. Both require an authoritative task-ledger record before delivery. Worker events claim the task, post a best-effort receipt, and wake the configured worker session. Terminal events use the durable terminal outbox, route a fixed receipt to the task's persisted delivery context, and retry if that receipt cannot be sent. Terminal transport never invokes a PM agent or makes a review decision. Discord delivery remains out of scope. The plugin does not create tasks or publish/release packages.
 
 ## Installation
 
-The plugin is published on npm. Install the current sandbox beta with the explicit `beta` dist-tag:
+Install the current stable release with the `latest` dist-tag:
 
 ```bash
-openclaw plugins install npm:@continuous-agentics/openclaw-fleetmind-delegation@beta
+openclaw plugins install npm:@continuous-agentics/openclaw-fleetmind-delegation@latest
 ```
 
 For a reproducible deployment, pin the tested version instead:
 
 ```bash
-openclaw plugins install npm:@continuous-agentics/openclaw-fleetmind-delegation@0.1.0-beta.5
+openclaw plugins install npm:@continuous-agentics/openclaw-fleetmind-delegation@0.1.0
 ```
 
-Do not install without a tag or version yet: npm `latest` remains `0.1.0-beta.1`, which predates the OpenClaw-managed AWS dependency compatibility fixes.
+Before `0.1.0` is published, install the locally packed candidate only in the sandbox described by the runbook.
 
 The command registers the plugin manifest ID, `fleetmind-delegation`.
 
@@ -79,7 +79,7 @@ FleetMind support for rendering this configuration from `fleet.yaml` is tracked 
 
 ### Optional NATS and Slack delivery
 
-`terminalEvents` enables the PM subscriber for `ship` and `block`. `delegationEvents` enables a worker subscriber for one configured OpenClaw agent. Set `workerHomeSlack` to open each delegated task in a fresh worker-home-channel thread; without it, a Slack task falls back to the authoritative planning thread. The worker service atomically acknowledges (claims) the delegated task before posting a receipt or waking the agent, so duplicate NATS deliveries do not start duplicate worker runs. Slack receipt failure never prevents the claimed task's worker wake; a wake failure leaves the claimed task for operational reconciliation.
+`terminalEvents` delivers a fixed PM receipt for `ship` and `block`. It resolves the task's persisted delivery context first, then falls back to a valid legacy Slack permalink only for old records. A task with neither is refused rather than routed to a generic channel or synthesized `agent:<pm>:main` session. A failed terminal receipt leaves its durable outbox record pending for retry. `delegationEvents` enables a worker subscriber for one configured OpenClaw agent. Set `workerHomeSlack` to open each delegated task in a fresh worker-home-channel thread; without it, a Slack task falls back to the authoritative planning thread. The worker service atomically acknowledges (claims) the delegated task before posting a receipt or waking the agent, so duplicate NATS deliveries do not start duplicate worker runs. Slack receipt failure never prevents the claimed task's worker wake; a wake failure leaves the claimed task for operational reconciliation.
 
 ```json5
 {
