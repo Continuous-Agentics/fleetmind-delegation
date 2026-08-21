@@ -28,7 +28,8 @@ a production deployment.
    receives exactly one Slack receipt/thread and exactly one worker wake, and
    that the authoritative ledger state becomes `accepted`.
 4. Ship and then complete human sign-off/merge through the configured authority.
-   Confirm Wren receives the terminal Slack receipt/thread and matching wake.
+   Confirm Wren receives exactly one terminal Slack receipt/thread. The plugin
+   must not invoke a PM agent or make a review decision.
 5. Repeat with a deliberately unavailable Slack receipt path. The worker wake
    must still occur using the authoritative delivery context; no Discord call
    may be made.
@@ -55,7 +56,7 @@ verify this recovery procedure:
 4. Create a new replacement task that references the blocked task ID and send
    it through the normal delegation path. Do not mutate the accepted task
    directly and do not replay a stale NATS event.
-5. Confirm Wren receives the block terminal wake and the replacement task is
+5. Confirm Wren receives the block terminal receipt and the replacement task is
    delivered exactly once.
 
 This is the required manual reconciler until an auditable retry/requeue feature

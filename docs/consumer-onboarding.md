@@ -65,7 +65,7 @@ openclaw plugins install ./packages/openclaw-plugin
 After the sandbox beta is published, install its exact version from npm:
 
 ```bash
-openclaw plugins install npm:@continuous-agentics/openclaw-fleetmind-delegation@0.1.0-beta.5
+openclaw plugins install npm:@continuous-agentics/openclaw-fleetmind-delegation@0.1.0-beta.9
 ```
 
 The install command registers the package's manifest ID, `fleetmind-delegation`. Configure that plugin ID in OpenClaw's configuration, replacing `your-fleet-tasks` and the region with the values from the FleetMind deployment:
@@ -90,7 +90,7 @@ The install command registers the package's manifest ID, `fleetmind-delegation`.
 
 The plugin exposes task reads plus guarded `ack`, `ship`, `block`, `signoff`, and `merge` lifecycle tools. Worker transitions require an `workerAgentIds` binding; sign-off and merge fail closed unless the caller appears in `reviewerAgentIds`. It does not create tasks.
 
-Optional `delegationEvents` and `terminalEvents` subscribers preserve FleetMind's NATS event contract, derive routing from the authoritative ledger, and post best-effort Slack receipts. Discord delivery remains out of scope. Configure and validate those subscribers only through the [sandbox runbook](plugin-sandbox-runbook.md) before using the beta.
+Optional `delegationEvents` and `terminalEvents` subscribers preserve FleetMind's NATS event contract and derive routing from the authoritative ledger. Worker receipts are best-effort before the worker wake; terminal receipts are durable-outbox deliveries that retry until sent. Terminal transport posts a fixed receipt and does not invoke a PM agent or make a review decision. Discord delivery remains out of scope. Configure and validate those subscribers only through the [sandbox runbook](plugin-sandbox-runbook.md) before using the beta.
 
 ## Minimal read-only IAM policy
 
