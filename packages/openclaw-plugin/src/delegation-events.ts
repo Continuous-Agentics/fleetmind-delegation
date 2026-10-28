@@ -89,16 +89,17 @@ export async function handleDelegationTaskEvent(
     task = await deps.ledger.getTask(event.task_id);
   } catch (error) {
     deps.onError?.(`Could not read task ${event.task_id}; refusing unverified delegation event.`, error);
-    return;
+    throw error;
   }
   if (!task) {
     deps.onError?.(`Ignoring delegation event for missing task ${event.task_id}.`, new Error("Missing task."));
-    return;
+    throw new Error("Delegation task is missing; notification must retry.");
   }
-  if (task.worker !== deps.workerId || task.status !== "delegated") {
-    deps.onError?.(`Ignoring delegation event for task ${event.task_id}: ledger worker or status does not permit delivery.`, new Error("Task mismatch or not delegated."));
-    return;
+  if (task.worker !== deps.workerId) {
+    throw new Error(`Delegation worker does not match the ledger for task ${event.task_id}.`);
   }
+  // Accepted (including uncertain execution) and later states are durable duplicate guards.
+  if (task.status !== "delegated") return;
 
   // Claim delivery before doing any side effect. ackTask is a conditional
   // delegated→accepted transition, so duplicate NATS deliveries cannot start
@@ -108,7 +109,10 @@ export async function handleDelegationTaskEvent(
   } catch (error) {
     deps.onInfo?.(`Ignoring duplicate or no-longer-delegated delivery for task ${task.task_id}.`);
     deps.onError?.(`Could not claim delegation delivery for task ${task.task_id}; not waking worker.`, error);
-    return;
+    // Only a confirmed durable state change proves another delivery claimed it.
+    const current = await deps.ledger.getTask(task.task_id);
+    if (current && current.worker === deps.workerId && current.status !== "delegated") return;
+    throw error;
   }
 
   const originalThread = slackThreadTarget(task.delivery_context, task.delegation_thread);
@@ -155,7 +159,8 @@ export async function handleDelegationTaskEvent(
     );
   } catch (error) {
     deps.onError?.(`Delegation ${task.task_id} was claimed but the worker wake failed; reconcile the accepted task before retrying.`, error);
-    return;
+    // The durable accepted state prevents blind execution resubmission on redelivery.
+    throw error;
   }
 
   deps.onInfo?.(`Delegation claimed and delivered for task ${task.task_id}.`);

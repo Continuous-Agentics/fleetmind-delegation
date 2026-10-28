@@ -25,6 +25,9 @@ export {
 import {
   DynamoDbTaskReader,
   NatsTaskEvents,
+  createTaskEvents,
+  type TaskEvents,
+  type SqsTaskEventsConfig,
   TaskLedger,
   type TaskReader,
   type TaskSummary,
@@ -44,6 +47,7 @@ interface PluginConfig {
   awsRegion?: string;
   reviewerAgentIds: string[];
   workerAgentIds: Record<string, string>;
+  taskEventTransport?: { provider: "sqs" } & SqsTaskEventsConfig;
   terminalEvents?: {
     natsServers: string[];
     subjectPrefix: string;
@@ -121,6 +125,16 @@ function readConfig(config: Record<string, unknown>): PluginConfig {
     || Object.entries(workerAgentIds).some(([agentId, worker]) => agentId.length === 0 || typeof worker !== "string" || worker.length === 0)) {
     throw new Error("fleetmind-delegation config.workerAgentIds must map non-empty agent IDs to non-empty worker IDs when set.");
   }
+  const taskEventTransport = config["taskEventTransport"] as PluginConfig["taskEventTransport"];
+  if (taskEventTransport !== undefined) {
+    if (!taskEventTransport || typeof taskEventTransport !== "object" || taskEventTransport.provider !== "sqs"
+      || typeof taskEventTransport.pmQueueUrl !== "string" || !taskEventTransport.pmQueueUrl
+      || typeof taskEventTransport.workerQueueUrls !== "object" || taskEventTransport.workerQueueUrls === null
+      || Array.isArray(taskEventTransport.workerQueueUrls)
+      || Object.values(taskEventTransport.workerQueueUrls).some((url) => typeof url !== "string" || !url)) {
+      throw new Error("taskEventTransport requires provider sqs, pmQueueUrl and workerQueueUrls.");
+    }
+  }
   const terminalEvents = config["terminalEvents"];
   if (terminalEvents !== undefined && (typeof terminalEvents !== "object" || terminalEvents === null || Array.isArray(terminalEvents))) {
     throw new Error("fleetmind-delegation config.terminalEvents must be an object when set.");
@@ -129,8 +143,8 @@ function readConfig(config: Record<string, unknown>): PluginConfig {
   const natsServers = terminal?.["natsServers"];
   const subjectPrefix = terminal?.["subjectPrefix"];
   const pmAgentId = terminal?.["pmAgentId"];
-  if (terminal && (!Array.isArray(natsServers) || natsServers.length === 0 || natsServers.some((server) => typeof server !== "string" || server.length === 0)
-    || typeof subjectPrefix !== "string" || subjectPrefix.length === 0 || typeof pmAgentId !== "string" || pmAgentId.length === 0)) {
+  if (terminal && ((!taskEventTransport && (!Array.isArray(natsServers) || natsServers.length === 0 || natsServers.some((server) => typeof server !== "string" || server.length === 0)
+    || typeof subjectPrefix !== "string" || subjectPrefix.length === 0)) || typeof pmAgentId !== "string" || pmAgentId.length === 0)) {
     throw new Error("fleetmind-delegation config.terminalEvents requires non-empty natsServers, subjectPrefix, and pmAgentId.");
   }
   const delegationEvents = config["delegationEvents"];
@@ -142,15 +156,15 @@ function readConfig(config: Record<string, unknown>): PluginConfig {
   const delegationSubjectPrefix = delegation?.["subjectPrefix"];
   const delegationAgentId = delegation?.["agentId"];
   const workerHomeSlack = delegation?.["workerHomeSlack"];
-  if (delegation && (!Array.isArray(delegationNatsServers) || delegationNatsServers.length === 0 || delegationNatsServers.some((server) => typeof server !== "string" || server.length === 0)
-    || typeof delegationSubjectPrefix !== "string" || delegationSubjectPrefix.length === 0 || typeof delegationAgentId !== "string" || delegationAgentId.length === 0
+  if (delegation && ((!taskEventTransport && (!Array.isArray(delegationNatsServers) || delegationNatsServers.length === 0 || delegationNatsServers.some((server) => typeof server !== "string" || server.length === 0)
+    || typeof delegationSubjectPrefix !== "string" || delegationSubjectPrefix.length === 0)) || typeof delegationAgentId !== "string" || delegationAgentId.length === 0
     || (workerHomeSlack !== undefined && (typeof workerHomeSlack !== "object" || workerHomeSlack === null || Array.isArray(workerHomeSlack)
       || typeof (workerHomeSlack as Record<string, unknown>)["accountId"] !== "string" || !(workerHomeSlack as Record<string, unknown>)["accountId"]
       || typeof (workerHomeSlack as Record<string, unknown>)["conversationId"] !== "string" || !(workerHomeSlack as Record<string, unknown>)["conversationId"])))) {
     throw new Error("fleetmind-delegation config.delegationEvents requires non-empty natsServers, subjectPrefix, agentId, and (when set) workerHomeSlack accountId/conversationId.");
   }
   return {
-    tableName, awsRegion, reviewerAgentIds, workerAgentIds: workerAgentIds as Record<string, string>,
+    tableName, awsRegion, reviewerAgentIds, taskEventTransport, workerAgentIds: workerAgentIds as Record<string, string>,
     terminalEvents: terminal ? {
       natsServers: natsServers as string[], subjectPrefix: subjectPrefix as string, pmAgentId: pmAgentId as string,
     } : undefined,
@@ -281,7 +295,7 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
   register(api) {
     let reader: TaskReader | undefined;
     let ledger: TaskLedger | undefined;
-    let lifecycleTerminalPublisher: NatsTaskEvents | undefined;
+    let lifecycleTerminalPublisher: TaskEvents | undefined;
     const getConfig = (): PluginConfig => readConfig(api.pluginConfig ?? {});
     const getReader = (): TaskReader => {
       reader ??= (() => {
@@ -297,6 +311,12 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
       })();
       return ledger;
     };
+    const transportFor = (legacy: { natsServers: string[]; subjectPrefix: string }, onError?: SqsTaskEventsConfig["onError"]): TaskEvents => {
+      const config = getConfig();
+      return createTaskEvents(config.taskEventTransport
+        ? { ...config.taskEventTransport, region: config.taskEventTransport.region ?? config.awsRegion, onError }
+        : { provider: "nats", servers: legacy.natsServers, subjectPrefix: legacy.subjectPrefix, onError });
+    };
     const publishTerminalEvent = async (taskId: string, event: "ship" | "block", terminalEventId: string): Promise<void> => {
       // Worker plugin instances already have this transport configuration for
       // delegation receipt. A successful publish is only a fast path: the
@@ -305,10 +325,7 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
       if (!config) return;
       const outbox = await getLedger().getTerminalEventOutbox(taskId, event, terminalEventId);
       if (!outbox) throw new Error(`Terminal outbox event is missing for ${taskId}/${event}.`);
-      lifecycleTerminalPublisher ??= new NatsTaskEvents({
-        servers: config.natsServers,
-        subjectPrefix: config.subjectPrefix,
-      });
+      lifecycleTerminalPublisher ??= transportFor(config);
       await lifecycleTerminalPublisher.publish({
         v: "1.0",
         event: outbox.event,
@@ -337,10 +354,10 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
         stopTerminalEvents = undefined;
         if (terminalReconcileTimer) clearTimeout(terminalReconcileTimer);
         terminalReconcileTimer = undefined;
-        await Promise.allSettled([...terminalHandlers]);
+        if (!(api.pluginConfig ?? {})["taskEventTransport"]) await Promise.allSettled([...terminalHandlers]);
         const generation = ++terminalEventGeneration;
         const config = getConfig().terminalEvents!;
-        const transport = new NatsTaskEvents({ servers: config.natsServers, subjectPrefix: config.subjectPrefix, onError: (error) => ctx.logger.error(`FleetMind terminal NATS error: ${String(error)}`) });
+        const transport = transportFor(config, (error, event) => ctx.logger.error(`FleetMind terminal transport error${event ? ` for task ${event.task_id}` : ""}: ${String(error)}`));
         const dispose = await transport.subscribeForPm((event) => {
           if (event.event !== "ship" && event.event !== "block" || generation !== terminalEventGeneration) return;
           const deliver = async (): Promise<void> => {
@@ -356,7 +373,9 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
               const outbox = event.terminal_event_id
                 ? await getLedger().getTerminalEventOutbox(event.task_id, terminalEvent, event.terminal_event_id)
                 : undefined;
-              if (outbox) return;
+              if (outbox?.delivery_status === "delivered") return;
+              if (outbox) throw new Error("Terminal handoff is still leased; retry notification later.");
+              if (getConfig().taskEventTransport) throw new Error("SQS terminal events require an existing terminal outbox record.");
             }
             const delivered = await handleTerminalTaskEvent(event as typeof event & { event: "ship" | "block" }, {
             ledger: getLedger(),
@@ -382,22 +401,28 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
             onInfo: (message) => ctx.logger.info(message),
           });
             if (claimed) {
-              if (delivered) await getLedger().completeTerminalEventDelivery(event.task_id, terminalEvent, event.terminal_event_id!, leaseId);
+              if (delivered) {
+                const completed = await getLedger().completeTerminalEventDelivery(event.task_id, terminalEvent, event.terminal_event_id!, leaseId);
+                if (!completed) throw new Error("Terminal handoff lease was lost before durable completion.");
+              }
               else await getLedger().releaseTerminalEventDelivery(event.task_id, terminalEvent, event.terminal_event_id!, leaseId);
             }
+            if (!delivered) throw new Error("Terminal handler did not complete its handoff.");
           };
           const tracked = deliver().catch(async (error) => {
             ctx.logger.error(`FleetMind terminal delivery failed: ${String(error)}`);
+            throw error;
           });
           terminalHandlers.add(tracked);
-          void tracked.then(() => terminalHandlers.delete(tracked));
+          void tracked.then(() => terminalHandlers.delete(tracked), () => terminalHandlers.delete(tracked));
           return tracked;
         });
         if (generation !== terminalEventGeneration) {
           await dispose();
+          await transport.close();
           return;
         }
-        stopTerminalEvents = dispose;
+        stopTerminalEvents = async () => { await dispose(); await transport.close(); };
         const reconcile = async (): Promise<"empty" | "work"> => {
           const pending = await getLedger().listPendingTerminalEvents();
           for (const task of pending) {
@@ -453,7 +478,7 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
         terminalReconcileTimer = undefined;
         await stopTerminalEvents?.();
         stopTerminalEvents = undefined;
-        await Promise.allSettled([...terminalHandlers]);
+        if (!(api.pluginConfig ?? {})["taskEventTransport"]) await Promise.allSettled([...terminalHandlers]);
       },
     });
 
@@ -466,7 +491,7 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
         if ((api.pluginConfig ?? {})["delegationEvents"] === undefined) return;
         await stopDelegationEvents?.();
         stopDelegationEvents = undefined;
-        await Promise.allSettled([...delegationHandlers]);
+        if (!(api.pluginConfig ?? {})["taskEventTransport"]) await Promise.allSettled([...delegationHandlers]);
         const generation = ++delegationEventGeneration;
         const pluginConfig = getConfig();
         const config = pluginConfig.delegationEvents!;
@@ -474,11 +499,7 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
         if (!workerId) {
           throw new Error(`fleetmind-delegation config.workerAgentIds must map delegationEvents.agentId ${config.agentId} to its FleetMind worker ID.`);
         }
-        const transport = new NatsTaskEvents({
-          servers: config.natsServers,
-          subjectPrefix: config.subjectPrefix,
-          onError: (error) => ctx.logger.error(`FleetMind delegation NATS error: ${String(error)}`),
-        });
+        const transport = transportFor(config, (error, event) => ctx.logger.error(`FleetMind delegation transport error${event ? ` for task ${event.task_id}` : ""}: ${String(error)}`));
         const dispose = await transport.subscribeForWorker(workerId, (event) => {
           if (event.event !== "delegation" || generation !== delegationEventGeneration) return;
           const handler = handleDelegationTaskEvent(event as typeof event & { event: "delegation" }, {
@@ -524,15 +545,18 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
         });
         if (generation !== delegationEventGeneration) {
           await dispose();
+          await transport.close();
           return;
         }
-        stopDelegationEvents = dispose;
+        stopDelegationEvents = async () => { await dispose(); await transport.close(); };
       },
       async stop() {
         delegationEventGeneration += 1;
         await stopDelegationEvents?.();
         stopDelegationEvents = undefined;
-        await Promise.allSettled([...delegationHandlers]);
+        if (!(api.pluginConfig ?? {})["taskEventTransport"]) await Promise.allSettled([...delegationHandlers]);
+        await lifecycleTerminalPublisher?.close();
+        lifecycleTerminalPublisher = undefined;
       },
     });
 
@@ -615,7 +639,7 @@ const pluginEntry: ReturnType<typeof definePluginEntry> = definePluginEntry({
               // The state change and outbox are already durable. Do not report
               // a completed lifecycle transition as failed just because the
               // optional low-latency delivery attempt was unavailable.
-              api.logger.warn(`FleetMind terminal NATS fast path failed for ${taskId}/${event}: ${String(error)}`);
+              api.logger.warn(`FleetMind terminal transport fast path failed for ${taskId}/${event}: ${String(error)}`);
             },
           });
           return { content: [{ type: "text", text }], details: {} };
