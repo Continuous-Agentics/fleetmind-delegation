@@ -134,7 +134,7 @@ export class SqsTaskEvents implements TaskEvents {
         if (extension || deadline.signal.aborted) return;
         extension = this.client.send(new ChangeMessageVisibilityCommand({
           QueueUrl: queue, ReceiptHandle: receipt, VisibilityTimeout: this.visibility,
-        })).then(() => {}, (error) => { visibilityLost = true; this.report(error, event); })
+        }), { abortSignal: deadline.signal }).then(() => {}, (error) => { visibilityLost = true; this.report(error, event); })
           .finally(() => { extension = undefined; });
       }, Math.floor(this.visibility * 1_000 / 3));
       await Promise.race([
@@ -144,7 +144,7 @@ export class SqsTaskEvents implements TaskEvents {
       clearInterval(timer);
       await extension;
       if (signal.aborted || deadline.signal.aborted || visibilityLost) throw new Error("SQS handoff interrupted; notification retained.");
-      await this.client.send(new DeleteMessageCommand({ QueueUrl: queue, ReceiptHandle: receipt }));
+      await this.client.send(new DeleteMessageCommand({ QueueUrl: queue, ReceiptHandle: receipt }), { abortSignal: deadline.signal });
     } catch (error) {
       this.report(deadline.signal.aborted && !signal.aborted
         ? new Error("SQS handoff deadline exceeded; execution may be uncertain. Inspect the durable task before any resubmission.")
