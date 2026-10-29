@@ -54,7 +54,7 @@ test("duplicate delivery is claimed once and never starts a second worker run", 
   let wakes = 0;
   let receipts = 0;
   const ledger = {
-    getTask: async () => task({ delivery_context: { provider: "slack", accountId: "A", conversationId: "C", threadId: "1.2" } }),
+    getTask: async () => task({ status: claimed ? "accepted" : "delegated", delivery_context: { provider: "slack", accountId: "A", conversationId: "C", threadId: "1.2" } }),
     ackTask: async () => {
       if (claimed) throw new Error("conditional check failed");
       claimed = true;
@@ -106,10 +106,10 @@ test("unverified or mismatched delegation events are ignored", async () => {
     ledger: { getTask: async () => task(), ackTask: async () => {} }, workerAgentId: "forge-agent", workerId: "forge",
     wakeWorker: async () => { wakeCalls += 1; }, onError: (message) => errors.push(message),
   });
-  await handleDelegationTaskEvent(event(), {
+  await assert.rejects(handleDelegationTaskEvent(event(), {
     ledger: { getTask: async () => undefined, ackTask: async () => {} }, workerAgentId: "forge-agent", workerId: "forge",
     wakeWorker: async () => { wakeCalls += 1; }, onError: (message) => errors.push(message),
-  });
+  }), /missing/);
   assert.equal(wakeCalls, 0);
   assert.match(errors[0]!, /missing task/);
 });

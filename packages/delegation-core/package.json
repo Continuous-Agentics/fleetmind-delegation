@@ -34,7 +34,8 @@
     "@aws-sdk/lib-dynamodb": "3.1070.0",
     "@smithy/core": "3.24.6",
     "nats": "^2.29.3",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "@aws-sdk/client-sqs": "3.709.0"
   },
   "repository": {
     "type": "git",

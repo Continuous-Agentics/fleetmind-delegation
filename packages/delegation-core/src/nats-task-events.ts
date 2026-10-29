@@ -13,7 +13,8 @@ export interface NatsTaskEventsConfig extends ConnectionOptions {
   onError?: (error: unknown, event?: TaskEvent) => void;
 }
 
-export type TaskEventHandler = (event: TaskEvent) => Promise<void> | void;
+import type { TaskEvents, TaskEventHandler } from "./task-events.js";
+export type { TaskEventHandler } from "./task-events.js";
 
 type Connect = (options: ConnectionOptions) => Promise<NatsConnection>;
 
@@ -21,7 +22,7 @@ type Connect = (options: ConnectionOptions) => Promise<NatsConnection>;
  * NATS transport adapter for the frozen FleetMind v1.0 task-event protocol.
  * It owns no lifecycle policy; callers choose when to publish or subscribe.
  */
-export class NatsTaskEvents {
+export class NatsTaskEvents implements TaskEvents {
   private readonly codec = StringCodec();
   private connection?: NatsConnection;
   private connectionPromise?: Promise<NatsConnection>;

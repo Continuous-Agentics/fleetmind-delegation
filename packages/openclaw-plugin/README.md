@@ -100,3 +100,101 @@ FleetMind support for rendering this configuration from `fleet.yaml` is tracked 
 ## Limits
 
 This version does not create tasks, implement Discord delivery, or publish/release packages.
+
+### Opt-in SQS transport (local candidate; cutover pending)
+
+Omitting `taskEventTransport` retains the existing NATS configuration and default
+behavior. One explicit selection switches the plugin's worker subscriber, PM
+terminal subscriber, terminal fast-path publisher and existing outbox relay:
+
+```json
+{
+  "tableName": "fleetmind-tasks",
+  "awsRegion": "us-east-1",
+  "workerAgentIds": { "forge-agent": "forge" },
+  "taskEventTransport": {
+    "provider": "sqs",
+    "pmQueueUrl": "https://sqs.us-east-1.amazonaws.com/123456789012/fleetmind-pm",
+    "workerQueueUrls": {
+      "forge": "https://sqs.us-east-1.amazonaws.com/123456789012/fleetmind-forge"
+    }
+  },
+  "delegationEvents": { "agentId": "forge-agent" },
+  "terminalEvents": { "pmAgentId": "pm" }
+}
+```
+
+In deployment, enable `delegationEvents` on the owning worker and
+`terminalEvents` on the owning PM. The combined example shows both identities;
+services continue to use the existing receiving handlers. Queue routing comes
+only from trusted configuration. No message-supplied URL is used. Queue URLs and
+AWS receipt handles are never passed to the receiving handler. NATS transport
+fields are required by runtime config validation when SQS is not selected.
+
+The SQS adapter and plugin consumers/terminal producer are wired locally. The
+initial delegation producer is outside this repository and still needs to select
+`createTaskEvents({ provider: "sqs", ... })` after its existing durable task write.
+There is no new dispatch outbox in this slice: a crash between that existing task
+write and initial notification remains a producer/reconciliation limitation.
+Infrastructure, producer cutover, live configuration, and runtime qualification
+are pending. No resources or deployment changes are included here.
+
+For later F configuration, provision and verify these exact requirements:
+
+- One **Standard** source queue for the PM and one distinct **Standard** source
+  queue per configured worker. Do not reuse a queue across logical owners.
+  Set `ReceiveMessageWaitTimeSeconds=20`, `VisibilityTimeout=60`,
+  `MessageRetentionPeriod=345600`, `MaximumMessageSize=262144`, and
+  `SqsManagedSseEnabled=true`. Adapter per-request settings default to the same
+  wait/visibility values. Tune handler deadline/visibility only with the existing
+  handler and ledger lease duration in mind.
+- Give each source queue its own Standard DLQ in the same account/region, with
+  `MessageRetentionPeriod=1209600` and `SqsManagedSseEnabled=true`. Set the source
+  `RedrivePolicy` to its DLQ ARN with `maxReceiveCount=5`. Set the DLQ
+  `RedriveAllowPolicy` to `redrivePermission=byQueue` and `sourceQueueArns` to that
+  source queue's ARN. Configure alarms/owner handling for DLQ depth and oldest
+  source message. The adapter intentionally neither consumes nor auto-redrives
+  the DLQ. Malformed and failed messages must remain eligible for redrive.
+- Allow producer roles `sqs:SendMessage` on only their configured destination
+  queue ARNs. A worker needs terminal-send permission on its PM queue; the PM
+  outbox relay also needs send permission on its PM queue. The external dispatch
+  producer needs send permission on the selected worker queues.
+- Allow each consumer role `sqs:ReceiveMessage`, `sqs:DeleteMessage`, and
+  `sqs:ChangeMessageVisibility` on only its own source queue ARN. No app-role
+  queue creation, queue listing, DLQ redrive, or arbitrary queue access is
+  required. Preserve the existing DynamoDB task/outbox and GSI permissions;
+  no new table/index is required. Queue policies must permit only the intended
+  principals and require TLS (`aws:SecureTransport`). If F configuration chooses
+  customer-managed KMS encryption instead of SSE-SQS, add the appropriate key
+  policy and `kms:Decrypt` for consumers and `kms:Decrypt`/`kms:GenerateDataKey`
+  for producers.
+- The deployment/operator role verifies queue attributes and redrive settings
+  before cutover; the app does not call `GetQueueAttributes` or create queues.
+  Configure region, account credentials and these fixed URLs through the
+  deployment's existing trusted configuration mechanism.
+
+At-least-once delivery does not guarantee exactly-once business execution. Worker
+handling uses the existing conditional `delegated -> accepted` transition before
+any receipt or agent invocation. Read/claim failures now reject so SQS can retry;
+a second invocation is suppressed by accepted/later state. A failed or uncertain
+agent invocation leaves the task accepted, logs that it needs reconciliation,
+and rejects the current notification. Redelivery checks that durable state and
+never blindly invokes it again. A process crash after claim but before invocation
+has the same accepted-task limitation. Use the existing task inspection and
+explicit owner reconciliation; there is no automatic execution recovery here.
+Only that task needs reconciliation; other messages continue. Stop/timeout does
+not prove that an agent action was cancelled.
+
+Terminal handling retains the transactional outbox, conditional claim/lease,
+release on handler failure, and durable completion marker. SQS receipt deletion
+requires that marker (or an already-delivered duplicate), rather than chat receipt
+or publication alone. Busy claims, missing outbox IDs/records, failed handlers,
+and lost/completion-write-failed leases remain retryable. The existing terminal
+handler sends a channel receipt; it does **not** schedule a durable PM agent run.
+Completion records that existing notification handoff, not PM execution or human
+review completion. A crash after the channel send but before durable completion
+can duplicate a receipt. Existing conditional ledger transitions remain the guard
+for business actions and human sign-off. The outbox relay may publish duplicates;
+a successful publish does not settle its outbox. Existing claim lease expiry and
+relay reconciliation are retained without a new orchestration/custody subsystem.
+Legacy terminal events without an outbox remain supported through NATS only.
